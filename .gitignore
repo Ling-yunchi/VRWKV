@@ -1,0 +1,10 @@
+.idea
+
+checkpoints
+
+**/__pycache__/
+**/*.pyc
+
+model/wkv/cuda/build
+
+data

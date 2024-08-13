@@ -1,0 +1,140 @@
+import os
+import numpy as np
+from sklearn.metrics import confusion_matrix
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from tqdm import tqdm
+from dataset.HYPSO1 import HYPSO1_PNG_Dataset
+from model.upernet import UPerNet
+from model.vrwkv import HWC_RWKV
+from torch.utils.data import DataLoader
+from torchvision import transforms, datasets
+
+data_transforms = transforms.Compose([
+    transforms.Resize((224, 224)),
+])
+
+train_dataset = HYPSO1_PNG_Dataset(
+    "dataset/HYPSO1Dataset", train=True, transform=data_transforms)
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+
+test_dataset = HYPSO1_PNG_Dataset(
+    "dataset/HYPSO1Dataset", train=False, transform=data_transforms)
+test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+
+x = torch.randn(16, 3, 224, 224).cuda()
+# 初始化模型和损失函数
+model = UPerNet(encoder=HWC_RWKV(in_channels=3), num_classes=3).cuda()
+criterion = nn.CrossEntropyLoss()  # 适用于多分类问题，如图像分割
+
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+num_iters = 10000
+val_interval = 100
+
+
+save_dir = './checkpoints'
+os.makedirs(save_dir, exist_ok=True)
+
+best_mean_IoU = 0.0
+
+# 初始化混淆矩阵
+confusion = np.zeros((3, 3))  # 假设有3个类别
+
+process = tqdm(range(num_iters))
+
+iter_count = 0
+while iter_count < num_iters:
+    for images, labels in train_loader:
+        # 将数据移到GPU
+        images = images.cuda()
+        labels = labels.cuda()
+
+        # 清零梯度
+        optimizer.zero_grad()
+
+        # 前向传播
+        outputs = model(images)
+
+        # 计算损失
+        loss = criterion(outputs, labels)
+
+        # 反向传播和优化
+        loss.backward()
+        optimizer.step()
+
+        process.set_description(f"loss: {loss.item()}")
+        process.update(1)
+        iter_count += 1
+
+        if iter_count % val_interval == 0:
+            # 验证阶段
+            model.eval()
+            with torch.no_grad():
+                for val_images, val_labels in test_loader:
+                    # 将数据移到GPU
+                    val_images = val_images.cuda()
+                    val_labels = val_labels.cuda()
+
+                    # 前向传播
+                    val_outputs = model(val_images)
+
+                    # 计算混淆矩阵
+                    predictions = torch.argmax(
+                        val_outputs, dim=1).cpu().numpy().flatten()
+                    true_labels = val_labels.cpu().numpy().flatten()
+                    confusion += confusion_matrix(true_labels,
+                                                  predictions, labels=list(range(3)))
+
+            # 计算 IoU 和像素准确率
+            intersection = np.diag(confusion)
+            ground_truth_set = confusion.sum(axis=1)
+            predicted_set = confusion.sum(axis=0)
+            union = ground_truth_set + predicted_set - intersection
+            IoU = intersection / union.astype(np.float32)
+            pixel_accuracy = np.sum(intersection) / \
+                np.sum(confusion).astype(np.float32)
+
+            # 使用类名输出IoU和准确度
+            class_iou = {
+                train_dataset.CLASS_NAMES[i]: IoU[i] for i in range(len(IoU))}
+            print(f"Iteration {iter_count}, IoU per class: {class_iou}")
+            print(
+                f"Iteration {iter_count}, Pixel Accuracy: {pixel_accuracy:.4f}")
+
+            print(f"Iteration {iter_count}, IoU per class: {IoU}")
+            print(f"Iteration {iter_count}, Pixel Accuracy: {pixel_accuracy}")
+
+            # 计算平均IoU
+            mean_IoU = np.mean(IoU)
+
+            torch.save({
+                'iter': iter_count,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+                'mean_IoU': mean_IoU,
+            }, save_dir + f'/model_{iter_count}.pth')
+
+            if mean_IoU > best_mean_IoU:
+                best_mean_IoU = mean_IoU
+                torch.save({
+                    'iter': iter_count,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss,
+                    'mean_IoU': mean_IoU,
+                }, save_dir + f'/best_model.pth')
+                print(
+                    f"Model saved at iteration {iter_count} with mean IoU: {best_mean_IoU:.4f}")
+
+            # 重置混淆矩阵
+            confusion.fill(0)
+            # 切换回训练模式
+            model.train()
+
+        if iter_count >= num_iters:
+            break
+
+process.close()
