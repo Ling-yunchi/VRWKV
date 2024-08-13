@@ -3,6 +3,7 @@ import torch
 
 
 def create_run_dir(base_dir):
+    os.makedirs(base_dir, exist_ok=True)
     # list all run_{i} folders
     run_folders = [f for f in os.listdir(base_dir) if f.startswith("run_")]
     # get the last run_{i} folder

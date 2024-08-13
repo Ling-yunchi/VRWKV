@@ -11,7 +11,7 @@ from model.vrwkv import HWC_RWKV
 from torch.utils.data import DataLoader
 from torchvision import transforms
 
-from utils.utils import create_run_dir, load_checkpoint, save_checkpoint
+from utils import create_run_dir, load_checkpoint, save_checkpoint
 
 
 data_transforms = transforms.Compose(
