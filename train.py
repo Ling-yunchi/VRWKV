@@ -9,38 +9,46 @@ from dataset.HYPSO1 import HYPSO1_PNG_Dataset
 from model.upernet import UPerNet
 from model.vrwkv import HWC_RWKV
 from torch.utils.data import DataLoader
-from torchvision import transforms, datasets
+from torchvision import transforms
 
-data_transforms = transforms.Compose([
-    transforms.Resize((224, 224)),
-])
+from utils.utils import create_run_dir, load_checkpoint, save_checkpoint
+
+
+data_transforms = transforms.Compose(
+    [
+        transforms.Resize((224, 224)),
+    ]
+)
 
 train_dataset = HYPSO1_PNG_Dataset(
-    "dataset/HYPSO1Dataset", train=True, transform=data_transforms)
+    "data/HYPSO1Dataset", train=True, transform=data_transforms
+)
 train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
 
 test_dataset = HYPSO1_PNG_Dataset(
-    "dataset/HYPSO1Dataset", train=False, transform=data_transforms)
+    "data/HYPSO1Dataset", train=False, transform=data_transforms
+)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
-x = torch.randn(16, 3, 224, 224).cuda()
+model_path = None
+
 # 初始化模型和损失函数
 model = UPerNet(encoder=HWC_RWKV(in_channels=3), num_classes=3).cuda()
 criterion = nn.CrossEntropyLoss()  # 适用于多分类问题，如图像分割
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+if model_path is not None:
+    load_checkpoint(model_path, model, optimizer)
+
 num_iters = 10000
 val_interval = 100
 
 
-save_dir = './checkpoints'
-os.makedirs(save_dir, exist_ok=True)
+save_dir = "./checkpoints/vrwkv_upernet"
+save_dir = create_run_dir(save_dir)
 
 best_mean_IoU = 0.0
-
-# 初始化混淆矩阵
-confusion = np.zeros((3, 3))  # 假设有3个类别
 
 process = tqdm(range(num_iters))
 
@@ -48,8 +56,7 @@ iter_count = 0
 while iter_count < num_iters:
     for images, labels in train_loader:
         # 将数据移到GPU
-        images = images.cuda()
-        labels = labels.cuda()
+        images, labels = images.cuda(), labels.cuda()
 
         # 清零梯度
         optimizer.zero_grad()
@@ -72,62 +79,66 @@ while iter_count < num_iters:
             # 验证阶段
             model.eval()
             with torch.no_grad():
-                for val_images, val_labels in test_loader:
+                # 初始化混淆矩阵
+                class_num = len(train_dataset.CLASSES)
+                confusion = np.zeros((class_num, class_num))
+                val_process = tqdm(
+                    test_loader, desc=f"Validation Iter {iter_count}", leave=False
+                )
+
+                for val_images, val_labels in val_process:
                     # 将数据移到GPU
-                    val_images = val_images.cuda()
-                    val_labels = val_labels.cuda()
+                    val_images, val_labels = val_images.cuda(), val_labels.cuda()
 
                     # 前向传播
                     val_outputs = model(val_images)
 
                     # 计算混淆矩阵
-                    predictions = torch.argmax(
-                        val_outputs, dim=1).cpu().numpy().flatten()
+                    predictions = (
+                        torch.argmax(val_outputs, dim=1).cpu().numpy().flatten()
+                    )
                     true_labels = val_labels.cpu().numpy().flatten()
-                    confusion += confusion_matrix(true_labels,
-                                                  predictions, labels=list(range(3)))
-
+                    confusion += confusion_matrix(
+                        true_labels, predictions, labels=np.arange(class_num)
+                    )
             # 计算 IoU 和像素准确率
             intersection = np.diag(confusion)
             ground_truth_set = confusion.sum(axis=1)
             predicted_set = confusion.sum(axis=0)
             union = ground_truth_set + predicted_set - intersection
             IoU = intersection / union.astype(np.float32)
-            pixel_accuracy = np.sum(intersection) / \
-                np.sum(confusion).astype(np.float32)
+            pixel_accuracy = np.sum(intersection) / np.sum(confusion).astype(np.float32)
 
             # 使用类名输出IoU和准确度
-            class_iou = {
-                train_dataset.CLASS_NAMES[i]: IoU[i] for i in range(len(IoU))}
+            class_iou = {train_dataset.CLASS_NAMES[i]: IoU[i] for i in range(len(IoU))}
             print(f"Iteration {iter_count}, IoU per class: {class_iou}")
-            print(
-                f"Iteration {iter_count}, Pixel Accuracy: {pixel_accuracy:.4f}")
-
-            print(f"Iteration {iter_count}, IoU per class: {IoU}")
-            print(f"Iteration {iter_count}, Pixel Accuracy: {pixel_accuracy}")
-
+            print(f"Iteration {iter_count}, Pixel Accuracy: {pixel_accuracy:.4f}")
             # 计算平均IoU
             mean_IoU = np.mean(IoU)
+            print(f"Iteration {iter_count}, Mean IoU: {mean_IoU:.4f}")
 
-            torch.save({
-                'iter': iter_count,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': loss,
-                'mean_IoU': mean_IoU,
-            }, save_dir + f'/model_{iter_count}.pth')
+            save_checkpoint(
+                f"{save_dir}/model_{iter_count}.pth",
+                model,
+                optimizer,
+                loss,
+                mean_IoU,
+                iter_count,
+            )
 
             if mean_IoU > best_mean_IoU:
                 best_mean_IoU = mean_IoU
-                torch.save({
-                    'iter': iter_count,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss,
-                    'mean_IoU': mean_IoU,
-                }, save_dir + f'/best_model.pth')
+                save_checkpoint(
+                    f"{save_dir}/best_model.pth",
+                    model,
+                    optimizer,
+                    loss,
+                    mean_IoU,
+                    iter_count,
+                )
                 print(
-                    f"Model saved at iteration {iter_count} with mean IoU: {best_mean_IoU:.4f}")
+                    f"Model saved at iteration {iter_count} with mean IoU: {best_mean_IoU:.4f}"
+                )
 
             # 重置混淆矩阵
             confusion.fill(0)
