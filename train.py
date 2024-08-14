@@ -111,7 +111,16 @@ while iter_count < num_iters:
 
             # 使用类名输出IoU和准确度
             class_iou = {train_dataset.CLASS_NAMES[i]: IoU[i] for i in range(len(IoU))}
+            class_accuracy = {
+                train_dataset.CLASS_NAMES[i]: (
+                    (intersection[i] / ground_truth_set[i])
+                    if ground_truth_set[i] > 0
+                    else 0
+                )
+                for i in range(class_num)
+            }
             print(f"Iteration {iter_count}, IoU per class: {class_iou}")
+            print(f"Iteration {iter_count}, Class Accuracy: {class_accuracy}")
             print(f"Iteration {iter_count}, Pixel Accuracy: {pixel_accuracy:.4f}")
             # 计算平均IoU
             mean_IoU = np.mean(IoU)

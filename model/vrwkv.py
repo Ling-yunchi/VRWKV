@@ -18,7 +18,7 @@ class VRWKV_SpatialMix(nn.Module):
         self.n_layer = n_layer
         self.n_embd = n_embd
         self.device = None
-        attn_sz = n_embd
+        self.attn_sz = n_embd
 
         self.dwconv = nn.Conv2d(
             n_embd,
@@ -35,30 +35,30 @@ class VRWKV_SpatialMix(nn.Module):
 
         self.omni_shift = OmniShift(dim=n_embd)
 
-        self.key = nn.Linear(n_embd, attn_sz, bias=False)
-        self.value = nn.Linear(n_embd, attn_sz, bias=False)
-        self.receptance = nn.Linear(n_embd, attn_sz, bias=False)
+        self.key = nn.Linear(n_embd, self.attn_sz, bias=False)
+        self.value = nn.Linear(n_embd, self.attn_sz, bias=False)
+        self.receptance = nn.Linear(n_embd, self.attn_sz, bias=False)
 
         self.forward_conv1d = nn.Conv1d(
-            in_channels=n_embd, out_channels=n_embd, kernel_size=1
+            in_channels=self.attn_sz, out_channels=self.attn_sz, kernel_size=1
         )
         self.backward_conv1d = nn.Conv1d(
-            in_channels=n_embd, out_channels=n_embd, kernel_size=1
+            in_channels=self.attn_sz, out_channels=self.attn_sz, kernel_size=1
         )
 
         if key_norm:
-            self.key_norm = nn.LayerNorm(n_embd)
+            self.key_norm = nn.LayerNorm(self.attn_sz)
         else:
             self.key_norm = None
 
-        self.output = nn.Linear(attn_sz, n_embd, bias=False)
+        self.output = nn.Linear(self.attn_sz, n_embd, bias=False)
 
         with torch.no_grad():
             self.spatial_decay = nn.Parameter(
-                torch.randn((self.recurrence, self.n_embd))
+                torch.randn((self.recurrence, self.attn_sz))
             )
             self.spatial_first = nn.Parameter(
-                torch.randn((self.recurrence, self.n_embd))
+                torch.randn((self.recurrence, self.attn_sz))
             )
 
     def jit_func(self, x, resolution):
@@ -103,15 +103,25 @@ class VRWKV_SpatialMix(nn.Module):
 
             if j % 2 == 0:
                 v = RUN_CUDA(
-                    B, T, C, self.spatial_decay[j] /
-                    T, self.spatial_first[j] / T, k, v
+                    B,
+                    T,
+                    self.attn_sz,
+                    self.spatial_decay[j] / T,
+                    self.spatial_first[j] / T,
+                    k,
+                    v,
                 )
             else:
                 k = rearrange(k, "b (h w) c -> b (w h) c", h=h, w=w)
                 v = rearrange(v, "b (h w) c -> b (w h) c", h=h, w=w)
                 v = RUN_CUDA(
-                    B, T, C, self.spatial_decay[j] /
-                    T, self.spatial_first[j] / T, k, v
+                    B,
+                    T,
+                    self.attn_sz,
+                    self.spatial_decay[j] / T,
+                    self.spatial_first[j] / T,
+                    k,
+                    v,
                 )
                 k = rearrange(k, "b (w h) c -> b (h w) c", h=h, w=w)
                 v = rearrange(v, "b (w h) c -> b (h w) c", h=h, w=w)
@@ -131,20 +141,25 @@ class VRWKV_ChannelMix(nn.Module):
         self.n_layer = n_layer
         self.n_embd = n_embd
 
+        self.omni_shift = OmniShift(dim=n_embd)
+
         hidden_sz = int(hidden_rate * n_embd)
         self.key = nn.Linear(n_embd, hidden_sz, bias=False)
-
-        self.omni_shift = OmniShift(dim=n_embd)
 
         if key_norm:
             self.key_norm = nn.LayerNorm(hidden_sz)
         else:
             self.key_norm = None
+
         self.receptance = nn.Linear(n_embd, n_embd, bias=False)
-        self.value = nn.Linear(hidden_sz, n_embd, bias=False)
+        self.value = nn.Linear(n_embd, hidden_sz, bias=False)
+
+        with torch.no_grad():
+            self.spatial_decay = nn.Parameter(torch.randn(self.n_embd))
+            self.spatial_first = nn.Parameter(torch.randn(self.n_embd))
 
     def forward(self, x, resolution):
-
+        B, T, C = x.size()
         h, w = resolution
 
         x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
@@ -155,8 +170,13 @@ class VRWKV_ChannelMix(nn.Module):
         k = torch.square(torch.relu(k))
         if self.key_norm is not None:
             k = self.key_norm(k)
-        kv = self.value(k)
-        x = torch.sigmoid(self.receptance(x)) * kv
+        # kv = self.value(k)
+        # x = torch.sigmoid(self.receptance(x)) * kv
+        v = self.value(x)
+
+        v = RUN_CUDA(B, T, C, self.spatial_decay / T, self.spatial_first / T, k, v)
+
+        x = torch.sigmoid(self.receptance(x)) * v
 
         return x
 
@@ -183,16 +203,17 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
-        self.att = VRWKV_SpatialMix(
-            n_embd, n_layer, layer_id, key_norm=key_norm)
+        self.att = VRWKV_SpatialMix(n_embd, n_layer, layer_id, key_norm=key_norm)
 
-        self.ffn = FFN(n_embd, hidden_rate=hidden_rate)
+        self.ffn = VRWKV_ChannelMix(
+            n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
+        )
 
         self.gamma1 = nn.Parameter(torch.ones((n_embd)), requires_grad=True)
         self.gamma2 = nn.Parameter(torch.ones((n_embd)), requires_grad=True)
 
     def forward(self, x):
-        b, c, h, w = x.shape
+        _, _, h, w = x.shape
 
         resolution = (h, w)
 
@@ -203,7 +224,7 @@ class Block(nn.Module):
 
         # x = self.dwconv2(x) + x
         x = rearrange(x, "b c h w -> b (h w) c")
-        x = x + self.gamma2 * self.ffn(self.ln2(x))
+        x = x + self.gamma2 * self.ffn(self.ln2(x), resolution)
         x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
 
         return x
@@ -283,12 +304,10 @@ class PatchEmbed(nn.Module):
         input_size = (input_size, input_size)
         self.init_input_size = input_size
         h_out = (
-            input_size[0] + 2 * padding[0] -
-            dilation[0] * (kernel_size[0] - 1) - 1
+            input_size[0] + 2 * padding[0] - dilation[0] * (kernel_size[0] - 1) - 1
         ) // stride[0] + 1
         w_out = (
-            input_size[1] + 2 * padding[1] -
-            dilation[1] * (kernel_size[1] - 1) - 1
+            input_size[1] + 2 * padding[1] - dilation[1] * (kernel_size[1] - 1) - 1
         ) // stride[1] + 1
         self.init_out_size = (h_out, w_out)
 
@@ -299,11 +318,9 @@ class PatchEmbed(nn.Module):
         return x, out_size
 
 
-def resize_pos_embed(pos_embed,
-                     src_shape,
-                     dst_shape,
-                     mode='bicubic',
-                     num_extra_tokens=1):
+def resize_pos_embed(
+    pos_embed, src_shape, dst_shape, mode="bicubic", num_extra_tokens=1
+):
     """Resize pos_embed weights.
 
     Args:
@@ -324,20 +341,22 @@ def resize_pos_embed(pos_embed,
     """
     if src_shape[0] == dst_shape[0] and src_shape[1] == dst_shape[1]:
         return pos_embed
-    assert pos_embed.ndim == 3, 'shape of pos_embed must be [1, L, C]'
+    assert pos_embed.ndim == 3, "shape of pos_embed must be [1, L, C]"
     _, L, C = pos_embed.shape
     src_h, src_w = src_shape
-    assert L == src_h * src_w + num_extra_tokens, \
-        f"The length of `pos_embed` ({L}) doesn't match the expected " \
-        f'shape ({src_h}*{src_w}+{num_extra_tokens}). Please check the' \
-        '`img_size` argument.'
+    assert L == src_h * src_w + num_extra_tokens, (
+        f"The length of `pos_embed` ({L}) doesn't match the expected "
+        f"shape ({src_h}*{src_w}+{num_extra_tokens}). Please check the"
+        "`img_size` argument."
+    )
     extra_tokens = pos_embed[:, :num_extra_tokens]
 
     src_weight = pos_embed[:, num_extra_tokens:]
     src_weight = src_weight.reshape(1, src_h, src_w, C).permute(0, 3, 1, 2)
 
     dst_weight = F.interpolate(
-        src_weight, size=dst_shape, align_corners=False, mode=mode)
+        src_weight, size=dst_shape, align_corners=False, mode=mode
+    )
     dst_weight = torch.flatten(dst_weight, 2).transpose(1, 2)
 
     return torch.cat((extra_tokens, dst_weight), dim=1)
@@ -389,8 +408,7 @@ class HWC_RWKV(nn.Module):
         num_patches = self.patch_resolution[0] * self.patch_resolution[1]
 
         # Set position embedding
-        self.pos_embed = nn.Parameter(
-            torch.zeros(1, num_patches, self.embed_dims))
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, self.embed_dims))
 
         self.drop_after_pos = nn.Dropout(p=drop_after_pos_rate)
 
@@ -414,8 +432,13 @@ class HWC_RWKV(nn.Module):
         B = x.shape[0]
         x, patch_resolution = self.patch_embed(x)
 
-        x = x + resize_pos_embed(self.pos_embed, self.patch_resolution,
-                                 patch_resolution, mode='bicubic', num_extra_tokens=0)
+        x = x + resize_pos_embed(
+            self.pos_embed,
+            self.patch_resolution,
+            patch_resolution,
+            mode="bicubic",
+            num_extra_tokens=0,
+        )
 
         x = self.drop_after_pos(x)
 
