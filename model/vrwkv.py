@@ -1,12 +1,11 @@
 import collections
-import math
-from typing import List
-from model.token_shift import OmniShift
+
 import torch
 import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
 
+from model.token_shift import QShift
 from model.wkv import RUN_CUDA
 
 
@@ -33,7 +32,8 @@ class VRWKV_SpatialMix(nn.Module):
         assert recurrence % 4 == 0, "recurrence must be divisible by 4"
         self.recurrence = recurrence
 
-        self.omni_shift = OmniShift(dim=n_embd)
+        # self.omni_shift = OmniShift(dim=n_embd)
+        self.q_shift = QShift()
 
         self.key = nn.Linear(n_embd, self.attn_sz, bias=False)
         self.value = nn.Linear(n_embd, self.attn_sz, bias=False)
@@ -64,11 +64,11 @@ class VRWKV_SpatialMix(nn.Module):
     def jit_func(self, x, resolution):
         # Mix x with the previous timestep to produce xk, xv, xr
 
-        h, w = resolution
-
-        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
-        x = self.omni_shift(x)
-        x = rearrange(x, "b c h w -> b (h w) c")
+        # h, w = resolution
+        # x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        # x = self.omni_shift(x)
+        # x = rearrange(x, "b c h w -> b (h w) c")
+        x = self.q_shift(x, resolution)
 
         k = self.key(x)
         v = self.value(x)
@@ -135,24 +135,28 @@ class VRWKV_SpatialMix(nn.Module):
 
 
 class VRWKV_ChannelMix(nn.Module):
-    def __init__(self, n_embd, n_layer, layer_id, hidden_rate=4, key_norm=False):
+    def __init__(self, n_embd, n_layer, layer_id, hidden_rate=1, key_norm=False):
         super().__init__()
         self.layer_id = layer_id
         self.n_layer = n_layer
         self.n_embd = n_embd
 
-        self.omni_shift = OmniShift(dim=n_embd)
+        # self.omni_shift = OmniShift(dim=n_embd)
+        self.q_shift = QShift()
 
-        hidden_sz = int(hidden_rate * n_embd)
-        self.key = nn.Linear(n_embd, hidden_sz, bias=False)
+        self.hidden_sz = int(hidden_rate * n_embd)
+
+        self.key = nn.Linear(n_embd, self.hidden_sz, bias=False)
 
         if key_norm:
-            self.key_norm = nn.LayerNorm(hidden_sz)
+            self.key_norm = nn.LayerNorm(self.hidden_sz)
         else:
             self.key_norm = None
 
         self.receptance = nn.Linear(n_embd, n_embd, bias=False)
-        self.value = nn.Linear(n_embd, hidden_sz, bias=False)
+        self.value = nn.Linear(n_embd, self.hidden_sz, bias=False)
+
+        self.output = nn.Linear(self.hidden_sz, n_embd, bias=False)
 
         with torch.no_grad():
             self.spatial_decay = nn.Parameter(torch.randn(self.n_embd))
@@ -160,11 +164,12 @@ class VRWKV_ChannelMix(nn.Module):
 
     def forward(self, x, resolution):
         B, T, C = x.size()
-        h, w = resolution
 
-        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
-        x = self.omni_shift(x)
-        x = rearrange(x, "b c h w -> b (h w) c")
+        # h, w = resolution
+        # x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        # x = self.omni_shift(x)
+        # x = rearrange(x, "b c h w -> b (h w) c")
+        x = self.q_shift(x, resolution)
 
         k = self.key(x)
         k = torch.square(torch.relu(k))
@@ -174,9 +179,11 @@ class VRWKV_ChannelMix(nn.Module):
         # x = torch.sigmoid(self.receptance(x)) * kv
         v = self.value(x)
 
-        v = RUN_CUDA(B, T, C, self.spatial_decay / T, self.spatial_first / T, k, v)
+        v = RUN_CUDA(
+            B, T, self.hidden_sz, self.spatial_decay / T, self.spatial_first / T, k, v
+        )
 
-        x = torch.sigmoid(self.receptance(x)) * v
+        x = torch.sigmoid(self.receptance(x)) * self.output(v)
 
         return x
 
@@ -196,7 +203,7 @@ class FFN(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, n_embd, n_layer, layer_id, hidden_rate=4, key_norm=False):
+    def __init__(self, n_embd, n_layer, layer_id, hidden_rate=1, key_norm=False):
         super().__init__()
         self.layer_id = layer_id
 
@@ -421,7 +428,7 @@ class HWC_RWKV(nn.Module):
                     n_embd=embed_dims,
                     n_layer=depth,
                     layer_id=i,
-                    hidden_rate=4,
+                    hidden_rate=1,
                     key_norm=False,
                 )
             )

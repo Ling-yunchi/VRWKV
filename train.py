@@ -1,18 +1,17 @@
-import os
 import numpy as np
-from sklearn.metrics import confusion_matrix
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from sklearn.metrics import confusion_matrix
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchvision import transforms
 from tqdm import tqdm
+
 from dataset.HYPSO1 import HYPSO1_PNG_Dataset
 from model.upernet import UPerNet
 from model.vrwkv import HWC_RWKV
-from torch.utils.data import DataLoader
-from torchvision import transforms
-
 from utils import create_run_dir, load_checkpoint, save_checkpoint
-
 
 data_transforms = transforms.Compose(
     [
@@ -47,6 +46,7 @@ val_interval = 100
 
 save_dir = "./checkpoints/vrwkv_upernet"
 save_dir = create_run_dir(save_dir)
+writer = SummaryWriter(log_dir=save_dir)
 
 best_mean_IoU = 0.0
 
@@ -71,7 +71,13 @@ while iter_count < num_iters:
         loss.backward()
         optimizer.step()
 
-        process.set_description(f"loss: {loss.item()}")
+        predictions = torch.argmax(outputs, dim=1)
+        accuracy = (predictions == labels).sum().item() / predictions.numel()
+
+        writer.add_scalar("Train/Loss", loss.item(), iter_count)
+        writer.add_scalar("Train/Accuracy", accuracy, iter_count)
+
+        process.set_description(f"loss: {loss.item()}, accuracy: {accuracy*100:.4f}%")
         process.update(1)
         iter_count += 1
 
@@ -83,7 +89,7 @@ while iter_count < num_iters:
                 class_num = len(train_dataset.CLASSES)
                 confusion = np.zeros((class_num, class_num))
                 val_process = tqdm(
-                    test_loader, desc=f"Validation Iter {iter_count}", leave=False
+                    test_loader, desc=f"val iter {iter_count}", leave=False
                 )
 
                 for val_images, val_labels in val_process:
@@ -126,6 +132,11 @@ while iter_count < num_iters:
             mean_IoU = np.mean(IoU)
             print(f"Iteration {iter_count}, Mean IoU: {mean_IoU:.4f}")
 
+            writer.add_scalar("Validation/MeanIoU", mean_IoU, iter_count)
+            writer.add_scalar("Validation/PixelAccuracy", pixel_accuracy, iter_count)
+            writer.add_scalars("Validation/IoU", class_iou, iter_count)
+            writer.add_scalars("Validation/ClassAccuracy", class_accuracy, iter_count)
+
             save_checkpoint(
                 f"{save_dir}/model_{iter_count}.pth",
                 model,
@@ -158,3 +169,4 @@ while iter_count < num_iters:
             break
 
 process.close()
+writer.close()
