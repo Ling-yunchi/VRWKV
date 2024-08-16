@@ -62,8 +62,6 @@ class VRWKV_SpatialMix(nn.Module):
             )
 
     def jit_func(self, x, resolution):
-        # Mix x with the previous timestep to produce xk, xv, xr
-
         # h, w = resolution
         # x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
         # x = self.omni_shift(x)
@@ -216,8 +214,8 @@ class Block(nn.Module):
             n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
         )
 
-        self.gamma1 = nn.Parameter(torch.ones((n_embd)), requires_grad=True)
-        self.gamma2 = nn.Parameter(torch.ones((n_embd)), requires_grad=True)
+        self.gamma1 = nn.Parameter(torch.ones(n_embd), requires_grad=True)
+        self.gamma2 = nn.Parameter(torch.ones(n_embd), requires_grad=True)
 
     def forward(self, x):
         _, _, h, w = x.shape
@@ -438,6 +436,7 @@ class HWC_RWKV(nn.Module):
     def forward(self, x):
         B = x.shape[0]
         x, patch_resolution = self.patch_embed(x)
+        h, w = patch_resolution
 
         x = x + resize_pos_embed(
             self.pos_embed,
@@ -449,9 +448,7 @@ class HWC_RWKV(nn.Module):
 
         x = self.drop_after_pos(x)
 
-        x = rearrange(
-            x, "b (h w) c -> b c h w", h=patch_resolution[0], w=patch_resolution[1]
-        )
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
 
         outs = []
         for i, layer in enumerate(self.layers):
@@ -460,12 +457,7 @@ class HWC_RWKV(nn.Module):
             if i == len(self.layers) - 1 and self.ln_final is not None:
                 x = rearrange(x, "b c h w -> b (h w) c")
                 x = self.ln_final(x)
-                x = rearrange(
-                    x,
-                    "b (h w) c -> b c h w",
-                    h=patch_resolution[0],
-                    w=patch_resolution[1],
-                )
+                x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
 
             if i in self.out_indices:
                 outs.append(x)
