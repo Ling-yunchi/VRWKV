@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
 
-from model.token_shift import QShift
+from model.token_shift import OmniShift
 from model.wkv import RUN_CUDA
 
 
@@ -32,8 +32,8 @@ class VRWKV_SpatialMix(nn.Module):
         assert recurrence % 4 == 0, "recurrence must be divisible by 4"
         self.recurrence = recurrence
 
-        # self.omni_shift = OmniShift(dim=n_embd)
-        self.q_shift = QShift()
+        self.omni_shift = OmniShift(dim=n_embd)
+        # self.q_shift = QShift()
 
         self.key = nn.Linear(n_embd, self.attn_sz, bias=False)
         self.value = nn.Linear(n_embd, self.attn_sz, bias=False)
@@ -62,11 +62,11 @@ class VRWKV_SpatialMix(nn.Module):
             )
 
     def jit_func(self, x, resolution):
-        # h, w = resolution
-        # x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
-        # x = self.omni_shift(x)
-        # x = rearrange(x, "b c h w -> b (h w) c")
-        x = self.q_shift(x, resolution)
+        h, w = resolution
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        x = self.omni_shift(x)
+        x = rearrange(x, "b c h w -> b (h w) c")
+        # x = self.q_shift(x, resolution)
 
         k = self.key(x)
         v = self.value(x)
@@ -139,8 +139,8 @@ class VRWKV_ChannelMix(nn.Module):
         self.n_layer = n_layer
         self.n_embd = n_embd
 
-        # self.omni_shift = OmniShift(dim=n_embd)
-        self.q_shift = QShift()
+        self.omni_shift = OmniShift(dim=n_embd)
+        # self.q_shift = QShift()
 
         self.hidden_sz = int(hidden_rate * n_embd)
 
@@ -152,7 +152,8 @@ class VRWKV_ChannelMix(nn.Module):
             self.key_norm = None
 
         self.receptance = nn.Linear(n_embd, n_embd, bias=False)
-        self.value = nn.Linear(n_embd, self.hidden_sz, bias=False)
+        self.value = nn.Linear(self.hidden_sz, n_embd, bias=False)
+        # self.value = nn.Linear(n_embd, self.hidden_sz, bias=False)
 
         self.output = nn.Linear(self.hidden_sz, n_embd, bias=False)
 
@@ -163,26 +164,25 @@ class VRWKV_ChannelMix(nn.Module):
     def forward(self, x, resolution):
         B, T, C = x.size()
 
-        # h, w = resolution
-        # x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
-        # x = self.omni_shift(x)
-        # x = rearrange(x, "b c h w -> b (h w) c")
-        x = self.q_shift(x, resolution)
+        h, w = resolution
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        x = self.omni_shift(x)
+        x = rearrange(x, "b c h w -> b (h w) c")
+        # x = self.q_shift(x, resolution)
 
         k = self.key(x)
         k = torch.square(torch.relu(k))
         if self.key_norm is not None:
             k = self.key_norm(k)
-        # kv = self.value(k)
-        # x = torch.sigmoid(self.receptance(x)) * kv
-        v = self.value(x)
 
-        v = RUN_CUDA(
-            B, T, self.hidden_sz, self.spatial_decay / T, self.spatial_first / T, k, v
-        )
+        # v = self.value(x)
+        # v = RUN_CUDA(
+        #     B, T, self.hidden_sz, self.spatial_decay / T, self.spatial_first / T, k, v
+        # )
+        # x = torch.sigmoid(self.receptance(x)) * self.output(v)
 
-        x = torch.sigmoid(self.receptance(x)) * self.output(v)
-
+        kv = self.value(k)
+        x = torch.sigmoid(self.receptance(x)) * kv
         return x
 
 
@@ -213,6 +213,7 @@ class Block(nn.Module):
         self.ffn = VRWKV_ChannelMix(
             n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
         )
+        # self.ffn = FFN(n_embd=n_embd)
 
         self.gamma1 = nn.Parameter(torch.ones(n_embd), requires_grad=True)
         self.gamma2 = nn.Parameter(torch.ones(n_embd), requires_grad=True)
@@ -230,6 +231,7 @@ class Block(nn.Module):
         # x = self.dwconv2(x) + x
         x = rearrange(x, "b c h w -> b (h w) c")
         x = x + self.gamma2 * self.ffn(self.ln2(x), resolution)
+        # x = x + self.gamma2 * self.ffn(self.ln2(x))
         x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
 
         return x
