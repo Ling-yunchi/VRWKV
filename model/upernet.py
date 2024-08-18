@@ -19,7 +19,13 @@ class FFN(nn.Module):
 
 
 class UPerNet(nn.Module):
-    def __init__(self, encoder, feature_channels=[256, 256, 256, 256], num_classes=3, img_size=224):
+    def __init__(
+        self,
+        encoder,
+        feature_channels=[256, 256, 256, 256],
+        num_classes=3,
+        img_size=224,
+    ):
         super(UPerNet, self).__init__()
         self.encoder = encoder
         self.img_size = to_2tuple(img_size)
@@ -30,11 +36,9 @@ class UPerNet(nn.Module):
         # 全局上下文模块
         self.global_context = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(feature_channels[-1],
-                      feature_channels[-1], kernel_size=1),
+            nn.Conv2d(feature_channels[-1], feature_channels[-1], kernel_size=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(feature_channels[-1],
-                      feature_channels[-1], kernel_size=1),
+            nn.Conv2d(feature_channels[-1], feature_channels[-1], kernel_size=1),
         )
 
         # 解码头
@@ -54,6 +58,12 @@ class UPerNet(nn.Module):
         for i, feature in enumerate(features):
             fused_feature = self.mffm[i](feature)
             if i > 0:
+                fused_feature = F.interpolate(
+                    fused_feature,
+                    size=features[0].size()[2:],
+                    mode="bilinear",
+                    align_corners=False,
+                )
                 fused_feature += fused_features[-1]
             fused_features.append(fused_feature)
 
@@ -70,10 +80,7 @@ class UPerNet(nn.Module):
         # 解码头
         decode_input = torch.cat(fused_features, dim=1)
         decode_input = F.interpolate(
-            decode_input,
-            size=self.img_size,
-            mode="bilinear",
-            align_corners=False
+            decode_input, size=self.img_size, mode="bilinear", align_corners=False
         )
         decode_output = self.decode_head(decode_input)
 

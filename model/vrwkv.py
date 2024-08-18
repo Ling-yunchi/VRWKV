@@ -378,6 +378,7 @@ class HWC_RWKV(nn.Module):
         in_channels=3,
         img_size=224,
         patch_size=16,
+        interpolation_mode="bicubic",
         drop_after_pos_rate=0.0,
         out_indices=[2, 5, 8, 11],
         final_norm=True,
@@ -401,6 +402,7 @@ class HWC_RWKV(nn.Module):
         self.num_extra_tokens = 0
         self.num_layers = depth
         self.drop_path_rate = drop_path_rate
+        self.interpolate_mode = interpolation_mode
 
         self.patch_embed = PatchEmbed(
             in_channels=in_channels,
@@ -444,7 +446,7 @@ class HWC_RWKV(nn.Module):
             self.pos_embed,
             self.patch_resolution,
             patch_resolution,
-            mode="bicubic",
+            mode=self.interpolate_mode,
             num_extra_tokens=0,
         )
 

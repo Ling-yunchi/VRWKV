@@ -1,12 +1,15 @@
 import torch
-from einops import rearrange
 
-from model.vrwkv import VRWKV_ChannelMix
+from model.adapter import VRWKV_Adapter
+from model.upernet import UPerNet
 
-model = VRWKV_ChannelMix(3, 1, 1, 2).cuda()
-x = torch.randn(1, 14 * 14, 3).cuda()
+model = UPerNet(encoder=VRWKV_Adapter(
+    224, 64, 4, 4, 0.0, [[2, 5, 8, 11]], True, 0.25, 1.0, True, True, False, in_channels=3
+), num_classes=3).cuda()
+x = torch.randn(1, 3, 224, 224).cuda()
 criterion = torch.nn.CrossEntropyLoss()
-output = model(x, (14, 14))
-output = rearrange(output, "b t c -> b c t")
-loss = criterion(output, torch.randint(0, 3, (1, 196)).cuda())
+output = model(x)
+loss = criterion(output, torch.randint(0, 3, (1, 224, 224)).cuda())
 loss.backward()
+print(output.shape)
+print(loss)
