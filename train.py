@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision.transforms.functional as F
-from matplotlib import pyplot as plt
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -13,7 +12,8 @@ from tqdm import tqdm
 from dataset.HYPSO1 import HYPSO1_PNG_Dataset
 from model.upernet import UPerNet
 from model.vrwkv import HWC_RWKV
-from utils import create_run_dir, load_checkpoint, save_checkpoint
+from utils import create_run_dir, load_checkpoint, save_checkpoint, draw_confusion_matrix, \
+    draw_normalized_confusion_matrix
 
 data_transforms = transforms.Compose(
     [
@@ -53,7 +53,7 @@ if model_path is not None:
     load_checkpoint(model_path, model, optimizer)
 
 num_iters = 10000
-val_interval = 100
+val_interval = 1
 
 
 save_dir = "./checkpoints/vrwkv_upernet"
@@ -150,33 +150,10 @@ while iter_count < num_iters:
             writer.add_scalars("Validation/ClassAccuracy", class_accuracy, iter_count)
 
             # draw confusion matrix
-            fig = plt.figure()
-            fig.set_size_inches(12, 12)
-            plt.imshow(confusion, cmap="hot", interpolation="nearest")
-            plt.colorbar()
-            plt.xlabel("Predicted")
-            plt.ylabel("Ground Truth")
-            plt.xticks(np.arange(class_num), train_dataset.CLASS_NAMES, rotation=90)
-            plt.yticks(np.arange(class_num), train_dataset.CLASS_NAMES)
-            plt.title("Confusion Matrix")
+            fig = draw_confusion_matrix(confusion, train_dataset.CLASS_NAMES)
             writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
 
-            confusion_normalized = confusion.astype('float') / confusion.sum(axis=1)[:, np.newaxis]
-            fig = plt.figure()
-            fig.set_size_inches(12, 12)
-            im = plt.imshow(confusion_normalized, cmap="hot", interpolation='nearest')
-            plt.colorbar(im)
-            plt.xlabel("Predicted")
-            plt.ylabel("Ground Truth")
-            plt.xticks(np.arange(class_num), train_dataset.CLASS_NAMES, rotation=90)
-            plt.yticks(np.arange(class_num), train_dataset.CLASS_NAMES)
-            thresh = confusion.max() / 2.
-            for i in range(class_num):
-                for j in range(class_num):
-                    plt.text(j, i, f"{confusion[i, j]:.0f}\n{confusion_normalized[i, j]:.2f}",
-                             horizontalalignment="center",
-                             color="white" if confusion[i, j] > thresh else "black")
-            plt.title("Normalized Confusion Matrix")
+            fig =  draw_normalized_confusion_matrix(confusion, train_dataset.CLASS_NAMES)
             writer.add_figure("Validation/NormalizedConfusionMatrix", fig, iter_count)
 
             save_checkpoint(

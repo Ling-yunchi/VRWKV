@@ -2,6 +2,7 @@ import itertools
 
 import numpy as np
 from matplotlib import pyplot as plt
+from torch.utils.tensorboard import SummaryWriter
 
 
 def draw_confusion_matrix(confusion, class_names):
@@ -10,7 +11,7 @@ def draw_confusion_matrix(confusion, class_names):
     :param confusion: 混淆矩阵
     :param class_names: 类别名
     """
-    plt.figure(figsize=(12, 12))
+    fig = plt.figure(figsize=(12, 12))
     plt.imshow(confusion, interpolation="nearest", cmap=plt.get_cmap("Blues"))
     plt.title("Confusion Matrix")
     plt.colorbar()
@@ -32,7 +33,8 @@ def draw_confusion_matrix(confusion, class_names):
     plt.tight_layout()
     plt.ylabel("True label")
     plt.xlabel("Predicted label")
-    return plt
+    return fig
+
 
 def draw_normalized_confusion_matrix(confusion, class_names):
     """
@@ -40,9 +42,13 @@ def draw_normalized_confusion_matrix(confusion, class_names):
     :param confusion: 混淆矩阵
     :param class_names: 类别名
     """
-    confusion_normalized = confusion.astype("float") / confusion.sum(axis=1)[:, np.newaxis]
-    plt.figure(figsize=(12, 12))
-    plt.imshow(confusion_normalized, interpolation="nearest", cmap=plt.get_cmap("Blues"))
+    confusion_normalized = (
+        confusion.astype("float") / confusion.sum(axis=1)[:, np.newaxis]
+    )
+    fig = plt.figure(figsize=(12, 12))
+    plt.imshow(
+        confusion_normalized, interpolation="nearest", cmap=plt.get_cmap("Blues")
+    )
     plt.title("Normalized Confusion Matrix")
     plt.colorbar()
 
@@ -63,10 +69,18 @@ def draw_normalized_confusion_matrix(confusion, class_names):
     plt.tight_layout()
     plt.ylabel("True label")
     plt.xlabel("Predicted label")
-    return plt
+    return fig
+
 
 if __name__ == "__main__":
-    confusion = np.random.randint(0, 100, (20, 20))
-    class_names = [f"class_{i}" for i in range(20)]
-    draw_confusion_matrix(confusion, class_names).show()
-    draw_normalized_confusion_matrix(confusion, class_names).show()
+    writer = SummaryWriter("logs")
+    for i in range(10):
+        confusion = np.random.randint(0, 100, (20, 20))
+        class_names = [f"class_{i}" for i in range(20)]
+
+        fig = draw_confusion_matrix(confusion, class_names)
+        writer.add_figure("Test/ConfusionMatrix", fig, i)
+
+        fig = draw_normalized_confusion_matrix(confusion, class_names)
+        writer.add_figure("Test/NormalizedConfusionMatrix", fig, i)
+
