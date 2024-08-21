@@ -1,6 +1,5 @@
 import glob
 import os
-import random
 
 import numpy as np
 import torch
@@ -8,29 +7,14 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 
-class SameTransform:
-    def __init__(self, transform):
-        self.transforms = transform
-
-    def __call__(self, img, mask):
-        seed = torch.randint(0, 2**32, (1,)).item()  # 随机种子
-        random.seed(seed)
-        torch.manual_seed(seed)
-        img = self.transforms(img)
-        random.seed(seed)
-        torch.manual_seed(seed)
-        mask = self.transforms(mask)
-        return img, mask
-
-
 class HYPSO1_PNG_Dataset(Dataset):
     CLASSES = [0, 1, 2]
     CLASS_NAMES = ["Sea", "Land", "Cloud"]
 
-    def __init__(self, root_path, train=True, transform=None):
+    def __init__(self, root_path, train=True, transforms=None):
         self.root_path = root_path
         self.train = train
-        self.transform = SameTransform(transform) if transform else None
+        self.transforms = transforms
         self.train_ratio = 0.8
 
         split = "train" if train else "validation"
@@ -55,8 +39,8 @@ class HYPSO1_PNG_Dataset(Dataset):
         image = Image.open(img_path).convert('RGB')
         annotation = Image.open(ann_path).convert('L')  # 'L' 表示灰度图像
 
-        if self.transform:
-            image, annotation = self.transform(image, annotation)
+        if self.transforms:
+            image, annotation = self.transforms(image, annotation)
 
         image = torch.as_tensor(
             np.array(image), dtype=torch.float32).permute(2, 0, 1)

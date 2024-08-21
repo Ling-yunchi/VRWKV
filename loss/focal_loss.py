@@ -1,33 +1,43 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2, reduction='mean'):
-        super(FocalLoss, self).__init__()
+    def __init__(self, alpha=0.5, gamma=2, weight=None, ignore_index=255):
+        super().__init__()
         self.alpha = alpha
         self.gamma = gamma
-        self.reduction = reduction
+        self.weight = weight
+        self.ignore_index = ignore_index
+        self.ce_fn = nn.CrossEntropyLoss(
+            weight=self.weight, ignore_index=self.ignore_index
+        )
 
-    def forward(self, logits, targets):
-        # 将 logits 转换为概率
-        probs = F.softmax(logits, dim=1)
-        log_probs = F.log_softmax(logits, dim=1)
+    def forward(self, preds, labels):
+        logpt = -self.ce_fn(preds, labels)
+        pt = torch.exp(logpt)
+        loss = -((1 - pt) ** self.gamma) * self.alpha * logpt
+        return loss
 
-        # 获取每个样本的真实类别对应的概率
-        probs = probs.gather(1, targets.unsqueeze(1))
-        log_probs = log_probs.gather(1, targets.unsqueeze(1))
 
-        # 计算负对数似然损失
-        ce_loss = -log_probs
+# Example usage
+if __name__ == "__main__":
+    # Define parameters
+    batch_size = 3
+    num_classes = 5
+    height = 10
+    width = 10
 
-        # 计算权重因子
-        weight = (1.0 - probs) ** self.gamma
-        fl = self.alpha * weight * ce_loss
+    # Create example tensors with some invalid pixels (255)
+    output = torch.randn(batch_size, num_classes, height, width, requires_grad=True)
+    target = torch.randint(
+        low=0, high=num_classes, size=(batch_size, height, width), dtype=torch.long
+    )
 
-        if self.reduction == 'mean':
-            return fl.mean()
-        elif self.reduction == 'sum':
-            return fl.sum()
-        else:
-            return fl
+    # Initialize the FocalLoss with ignore_index
+    criterion = FocalLoss()
+
+    # Compute the loss
+    loss = criterion(output, target)
+    print(f"Loss: {loss.item()}")
