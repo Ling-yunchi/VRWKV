@@ -30,7 +30,7 @@ def draw_confusion_matrix(confusion, class_names):
             color="white" if confusion[i, j] > thresh else "black",
         )
 
-    plt.tight_layout()
+    # plt.tight_layout()
     plt.ylabel("True label")
     plt.xlabel("Predicted label")
     return fig
@@ -61,26 +61,34 @@ def draw_normalized_confusion_matrix(confusion, class_names):
         plt.text(
             j,
             i,
-            f"{confusion[i, j]:.0f}\n{confusion_normalized[i, j]:.2f}",
+            f"{confusion_normalized[i, j]:.2f}",
             horizontalalignment="center",
             color="white" if confusion[i, j] > thresh else "black",
         )
 
-    plt.tight_layout()
+    # plt.tight_layout()
     plt.ylabel("True label")
     plt.xlabel("Predicted label")
     return fig
 
 
 if __name__ == "__main__":
-    writer = SummaryWriter("logs")
-    for i in range(10):
-        confusion = np.random.randint(0, 100, (20, 20))
-        class_names = [f"class_{i}" for i in range(20)]
+    # writer = SummaryWriter("logs")
+    # for i in range(10):
+    #     confusion = np.random.randint(0, 100, (20, 20))
+    #     class_names = [f"class_{i}" for i in range(20)]
+    #
+    #     fig = draw_confusion_matrix(confusion, class_names)
+    #     writer.add_figure("Test/ConfusionMatrix", fig, i)
+    #
+    #     fig = draw_normalized_confusion_matrix(confusion, class_names)
+    #     writer.add_figure("Test/NormalizedConfusionMatrix", fig, i)
+    confusion = np.random.randint(0, 100, (20, 20))
+    class_names = [f"class_{i}" for i in range(20)]
 
-        fig = draw_confusion_matrix(confusion, class_names)
-        writer.add_figure("Test/ConfusionMatrix", fig, i)
+    fig = draw_confusion_matrix(confusion, class_names)
+    fig.show()
 
-        fig = draw_normalized_confusion_matrix(confusion, class_names)
-        writer.add_figure("Test/NormalizedConfusionMatrix", fig, i)
+    fig = draw_normalized_confusion_matrix(confusion, class_names)
+    fig.show()
 
