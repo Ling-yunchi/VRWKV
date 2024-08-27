@@ -90,6 +90,8 @@ class FocalLoss_Ori(nn.Module):
         # self.ignore_index = ignore_index
         self.alpha = alpha
 
+        assert self.reduction in ["none", "mean", "sum"]
+
         if ignore_index is None:
             self.ignore_index = None
         else:
@@ -159,6 +161,8 @@ class FocalLoss_Ori(nn.Module):
             loss = loss.mean()
             if valid_mask is not None:
                 loss = loss.sum() / valid_mask.sum()
+        elif self.reduction == "sum":
+            loss = loss.sum()
         elif self.reduction == "none":
             loss = loss.view(ori_shp)
         return loss
@@ -202,6 +206,7 @@ if __name__ == "__main__":
         ],
         ignore_index=[0, 255],
         gamma=2,
+        reduction="sum",
     )
     x = torch.randn(2, 21, 4, 4, requires_grad=True)
     y = torch.randint(0, 21, (2, 4, 4))
