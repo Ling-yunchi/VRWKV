@@ -87,8 +87,16 @@ class FocalLoss_Ori(nn.Module):
         self.gamma = gamma
         self.reduction = reduction
         self.smooth = 1e-4
-        self.ignore_index = ignore_index
+        # self.ignore_index = ignore_index
         self.alpha = alpha
+
+        if ignore_index is None:
+            self.ignore_index = None
+        else:
+            if not isinstance(ignore_index, (list, tuple)):
+                ignore_index = [ignore_index]
+            self.ignore_index = ignore_index
+
         if alpha is None:
             self.alpha = torch.ones(
                 num_class,
@@ -129,7 +137,12 @@ class FocalLoss_Ori(nn.Module):
         target = target.view(-1, 1)  # [N,d1,d2,...]->[N*d1*d2*...,1]
         valid_mask = None
         if self.ignore_index is not None:
-            valid_mask = target != self.ignore_index
+            # valid_mask = target != self.ignore_index
+            # target = target * valid_mask
+            valid_mask = torch.ones_like(target, dtype=torch.long)
+            for idx in self.ignore_index:
+                valid_mask = valid_mask * (target != idx)
+
             target = target * valid_mask
 
         # ----------memory saving way--------
@@ -187,6 +200,7 @@ if __name__ == "__main__":
             62.7759,
             106.1197,
         ],
+        ignore_index=[0, 255],
         gamma=2,
     )
     x = torch.randn(2, 21, 4, 4, requires_grad=True)
