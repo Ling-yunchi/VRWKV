@@ -10,10 +10,16 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from dataset.HYPSO1 import HYPSO1_PNG_Dataset
+from model.base_model import SegModel
 from model.upernet import UPerNet
 from model.vrwkv import HWC_RWKV
-from utils import create_run_dir, load_checkpoint, save_checkpoint, draw_confusion_matrix, \
-    draw_normalized_confusion_matrix
+from utils import (
+    create_run_dir,
+    load_checkpoint,
+    save_checkpoint,
+    draw_confusion_matrix,
+    draw_normalized_confusion_matrix,
+)
 
 data_transforms = transforms.Compose(
     [
@@ -44,7 +50,9 @@ test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 model_path = None
 
 # 初始化模型和损失函数
-model = UPerNet(encoder=HWC_RWKV(in_channels=3), num_classes=3).cuda()
+model = SegModel(
+    backbone=HWC_RWKV(in_channels=3), decode_head=UPerNet(num_classes=3)
+).cuda()
 criterion = nn.CrossEntropyLoss()  # 适用于多分类问题，如图像分割
 
 optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -153,7 +161,7 @@ while iter_count < num_iters:
             fig = draw_confusion_matrix(confusion, train_dataset.CLASS_NAMES)
             writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
 
-            fig =  draw_normalized_confusion_matrix(confusion, train_dataset.CLASS_NAMES)
+            fig = draw_normalized_confusion_matrix(confusion, train_dataset.CLASS_NAMES)
             writer.add_figure("Validation/NormalizedConfusionMatrix", fig, iter_count)
 
             save_checkpoint(
