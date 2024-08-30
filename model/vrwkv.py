@@ -19,15 +19,15 @@ class VRWKV_SpatialMix(nn.Module):
         self.device = None
         self.attn_sz = n_embd
 
-        self.dwconv = nn.Conv2d(
-            n_embd,
-            n_embd,
-            kernel_size=3,
-            stride=1,
-            padding=1,
-            groups=n_embd,
-            bias=False,
-        )
+        # self.dwconv = nn.Conv2d(
+        #     n_embd,
+        #     n_embd,
+        #     kernel_size=3,
+        #     stride=1,
+        #     padding=1,
+        #     groups=n_embd,
+        #     bias=False,
+        # )
 
         assert recurrence % 4 == 0, "recurrence must be divisible by 4"
         self.recurrence = recurrence
@@ -162,7 +162,7 @@ class VRWKV_ChannelMix(nn.Module):
             self.spatial_first = nn.Parameter(torch.randn(self.n_embd))
 
     def forward(self, x, resolution):
-        B, T, C = x.size()
+        # B, T, C = x.size()
 
         h, w = resolution
         x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
