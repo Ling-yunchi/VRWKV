@@ -13,8 +13,7 @@ from tqdm import tqdm
 
 from dataset.HYPSO1 import HYPSO1_PNG_Dataset
 from model.base_model import SegModel
-from model.upernet import UPerNet
-from model.vrwkv import HWC_RWKV
+from model.unet_rwkv import UNetRWKV, UNetDecoder
 from utils import (
     create_run_dir,
     load_checkpoint,
@@ -36,11 +35,51 @@ def cleanup():
     dist.destroy_process_group()
 
 
-def data_transform(image, mask):
-    target_size = [224, 224]
+def train_data_transform(image, mask):
+    # # 随机水平翻转
+    # if torch.rand(1) < 0.5:
+    #     image, mask = F.hflip(image), F.hflip(mask)
+
+    # # 随机垂直翻转
+    # if torch.rand(1) < 0.5:
+    #     image, mask = F.vflip(image), F.vflip(mask)
+
+    # # 随机旋转
+    # angle = RandomRotation.get_params(degrees=[-90, 90])
+    # image, mask = F.rotate(image, angle), F.rotate(mask, angle, fill=255)
+
+    # # 随机颜色抖动
+    # color_jitter = ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
+    # image = color_jitter(image)
+
+    target_size = (224, 224)
+    # if torch.rand(1) < 0.1 and min(image.size) >= target_size[0]:
+    #     i, j, h, w = RandomCrop.get_params(image, output_size=target_size)
+    #     image, mask = F.crop(image, i, j, h, w), F.crop(mask, i, j, h, w)
+    # else:
+    #     # 直接调整大小
+    #     image = F.resize(image, target_size)
+    #     mask = F.resize(mask, target_size, interpolation=F.InterpolationMode.NEAREST)
 
     image = F.resize(image, target_size)
     mask = F.resize(mask, target_size, interpolation=F.InterpolationMode.NEAREST)
+
+    # to tensor
+    image = F.to_tensor(image)
+    mask = torch.from_numpy(np.array(mask)).long()
+
+    return image, mask
+
+
+def test_data_transform(image, mask):
+    target_size = (224, 224)
+
+    image = F.resize(image, target_size)
+    mask = F.resize(mask, target_size, interpolation=F.InterpolationMode.NEAREST)
+
+    # to tensor
+    image = F.to_tensor(image)
+    mask = torch.from_numpy(np.array(mask)).long()
 
     return image, mask
 
@@ -52,53 +91,62 @@ def main(rank, world_size):
     torch.cuda.set_device(rank)
 
     train_dataset = HYPSO1_PNG_Dataset(
-        "data/HYPSO1Dataset", train=True, transforms=data_transform
+        "data/HYPSO1Dataset", train=True, transforms=train_data_transform
     )
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         train_dataset, num_replicas=world_size, rank=rank
     )
-    train_loader = DataLoader(
-        train_dataset, batch_size=16, shuffle=True, sampler=train_sampler
-    )
+    train_loader = DataLoader(train_dataset, batch_size=16, sampler=train_sampler)
 
     test_dataset = HYPSO1_PNG_Dataset(
-        "data/HYPSO1Dataset", train=False, transforms=data_transform
+        "data/HYPSO1Dataset", train=False, transforms=test_data_transform
     )
     test_sampler = torch.utils.data.distributed.DistributedSampler(
         test_dataset, num_replicas=world_size, rank=rank
     )
-    test_loader = DataLoader(
-        test_dataset, batch_size=16, shuffle=False, sampler=test_sampler
-    )
+    test_loader = DataLoader(test_dataset, batch_size=16, sampler=test_sampler)
 
     model_path = None
 
     # 初始化模型和损失函数
     model = SegModel(
-        backbone=HWC_RWKV(in_channels=3), decode_head=UPerNet(num_classes=3)
+        backbone=UNetRWKV(
+            in_channels=3,
+            depth=4,
+            embed_dims=[64, 128, 256, 512],
+            out_indices=[0, 1, 2, 3],
+        ),
+        decode_head=UNetDecoder(
+            num_classes=21,
+            image_size=224,
+            feature_channels=[64, 128, 256, 512],
+        ),
     ).cuda()
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
 
-    criterion = nn.CrossEntropyLoss()  # 适用于多分类问题，如图像分割
+    criterion = nn.CrossEntropyLoss()
 
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     if model_path is not None:
         load_checkpoint(model_path, model, optimizer)
 
-    num_iters = 10000
-    val_interval = 1
+    para_model = nn.parallel.DistributedDataParallel(
+        model, device_ids=[rank], find_unused_parameters=True
+    )
+
+    num_iters = 40000
+    val_interval = 1000
 
     global_step = 0
 
     if rank == 0:
-        save_dir = "./checkpoints/vrwkv_upernet"
+        save_dir = "./checkpoints/voc_unet_rwkv"
         save_dir = create_run_dir(save_dir)
         writer = SummaryWriter(log_dir=save_dir)
 
         best_mean_IoU = 0.0
 
-    process = tqdm(range(num_iters))
+        process = tqdm(range(num_iters))
 
     iter_count = 0
     while iter_count < num_iters:
@@ -110,7 +158,7 @@ def main(rank, world_size):
             optimizer.zero_grad()
 
             # 前向传播
-            outputs = model(images)
+            outputs = para_model(images)
 
             # 计算损失
             loss = criterion(outputs, labels)
@@ -121,10 +169,9 @@ def main(rank, world_size):
 
             global_step += 1
 
-            loss_sum = torch.zeros(1).cuda()
+            loss_sum = torch.zeros(1, dtype=torch.float32).cuda()
             dist.all_reduce(loss, op=dist.ReduceOp.SUM)
             loss_sum += loss.item()
-
             avg_loss = loss_sum / world_size
 
             if rank == 0:
@@ -247,10 +294,12 @@ def main(rank, world_size):
                     # 重置混淆矩阵
                     confusion.fill(0)
 
-                    dist.barrier()
-
                     # 切换回训练模式
                     model.train()
+
+                torch.cuda.empty_cache()
+
+                dist.barrier()
 
             if iter_count >= num_iters:
                 break
