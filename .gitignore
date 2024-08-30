@@ -8,3 +8,5 @@ checkpoints
 model/wkv/cuda/build
 
 data
+
+*.log
