@@ -1,75 +1,83 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class DiceLoss(nn.Module):
-    def __init__(self, num_classes=4, epsilon=1e-6, reduction="mean"):
+    def __init__(self, smooth=1.0, ignore_index=None, reduction="mean"):
+        """
+        Args:
+            smooth (float): 用于平滑损失计算，防止分母为0.
+            ignore_index (int or None): 需要忽略的类别索引.
+            reduction (str): 选择损失聚合方式，可选 'mean'、'sum' 或 'none'.
+        """
         super(DiceLoss, self).__init__()
-        self.num_classes = num_classes
-        self.epsilon = epsilon
+        self.smooth = smooth
+        self.ignore_index = ignore_index
         assert reduction in ["none", "mean", "sum"], "Unsupported reduction method."
         self.reduction = reduction
 
-    def forward(self, input, target):
-        # 将 input 转换为 one-hot 编码
-        input_one_hot = torch.zeros(
-            (input.shape[0], self.num_classes, *input.shape[2:]),
-            dtype=input.dtype,
-            device=input.device,
-        )
-        input_one_hot.scatter_(1, input.argmax(dim=1, keepdim=True), 1)
+    def forward(self, inputs, targets):
+        """
+        Args:
+            inputs (torch.Tensor): 预测值，形状为 (batch_size, C, H, W)。
+            targets (torch.Tensor): 真实标签，形状为 (batch_size, H, W)。
+        """
+        num_classes = inputs.shape[1]  # 获取类别数
+        inputs = F.softmax(inputs, dim=1)  # 对预测值应用softmax
 
-        # 将 target 转换为 one-hot 编码
-        target_one_hot = torch.zeros(
-            (target.shape[0], self.num_classes, *target.shape[1:]),
-            dtype=target.dtype,
-            device=target.device,
-        )
-        target_one_hot.scatter_(1, target.unsqueeze(1), 1)
+        # 初始化每个类别的Dice系数
+        dice_per_class = []
 
-        # 计算每个类别的 Dice Loss
-        dice_losses = []
-        for class_index in range(self.num_classes):
-            dice_loss = self.dice_coefficient(
-                input_one_hot[:, class_index],
-                target_one_hot[:, class_index],
-                self.epsilon,
+        for c in range(num_classes):
+            if self.ignore_index is not None and c == self.ignore_index:
+                continue  # 跳过需要忽略的类别
+
+            # 获取当前类别的预测和实际标签
+            inputs_flat = inputs[:, c].contiguous().view(-1)
+            targets_flat = (targets == c).float().contiguous().view(-1)
+
+            # 计算交集和并集
+            intersection = (inputs_flat * targets_flat).sum()
+            dice = (2.0 * intersection + self.smooth) / (
+                inputs_flat.sum() + targets_flat.sum() + self.smooth
             )
-            dice_losses.append(1 - dice_loss)
 
-        # 将每个类别的损失合并为一个张量
-        dice_losses_tensor = torch.stack(dice_losses)
+            # 记录每个类别的Dice系数
+            dice_per_class.append(1 - dice)
 
-        # 根据 reduction 参数计算最终的损失
-        if self.reduction == "none":
-            return dice_losses_tensor.mean(dim=1)  # 返回每个样本的平均损失
-        elif self.reduction == "mean":
-            return dice_losses_tensor.mean()  # 返回所有样本的平均损失
+        # 将损失转换为tensor
+        dice_per_class = torch.stack(dice_per_class)
+
+        # 根据reduction类型处理损失
+        if self.reduction == "mean":
+            return dice_per_class.mean()
         elif self.reduction == "sum":
-            return dice_losses_tensor.sum()  # 返回所有样本的总和损失
-
-    def dice_coefficient(self, input, target, epsilon=1e-6):
-        """计算单个类别的 Dice 系数"""
-        smooth = epsilon
-        intersection = torch.sum(input * target)
-        union = torch.sum(input) + torch.sum(target)
-        return (2.0 * intersection + smooth) / (union + smooth)
+            return dice_per_class.sum()
+        else:
+            return dice_per_class
 
 
 # 示例用法
 if __name__ == "__main__":
     # 假设我们有一个 4 类的分割任务
-    n_classes = 2
-    batch_size = 1
-    height, width = 2, 2
+    n_classes = 21
+    batch_size = 10
+    height, width = 224, 224
 
     # 创建模拟的输入和目标
     input = torch.randn(batch_size, n_classes, height, width)
     target = torch.randint(0, n_classes, (batch_size, height, width))
 
+    boundary_width = 1
+    target[:, :boundary_width, :] = 255  # Top boundary
+    target[:, -boundary_width:, :] = 255  # Bottom boundary
+    target[:, :, :boundary_width] = 255  # Left boundary
+    target[:, :, -boundary_width:] = 255  # Right boundary
+
     # 初始化损失函数
-    criterion = DiceLoss(num_classes=n_classes)
+    criterion = DiceLoss(reduction="none")
 
     # 计算多分类 Dice Loss
     loss = criterion(input, target)
-    print("Multi-class Dice Loss:", loss.item())
+    print("Multi-class Dice Loss:", loss)

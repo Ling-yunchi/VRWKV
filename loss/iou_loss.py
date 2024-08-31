@@ -4,52 +4,64 @@ import torch.nn.functional as F
 
 
 class IoULoss(nn.Module):
-    def __init__(self, num_classes=4, epsilon=1e-6, reduction="mean"):
+    def __init__(self, ignore_index=None, reduction="mean"):
+        """
+        IoU Loss for image segmentation tasks.
+
+        Args:
+            ignore_index (int, optional): Specifies a target value that is ignored and does not contribute to the input gradient.
+            reduction (str, optional): Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'. Default: 'mean'.
+        """
         super(IoULoss, self).__init__()
-        self.num_classes = num_classes
-        self.epsilon = epsilon
+        self.ignore_index = ignore_index
         assert reduction in ["none", "mean", "sum"], "Unsupported reduction method."
         self.reduction = reduction
 
     def forward(self, input, target):
-        # 将 input 转换为 softmax 后的概率分布
-        input_softmax = F.softmax(input, dim=1)
+        """
+        Forward pass of the loss function.
 
-        # 将 target 转换为 one-hot 编码
-        target_one_hot = torch.zeros(
-            (target.shape[0], self.num_classes, *target.shape[1:]),
-            dtype=target.dtype,
-            device=target.device,
-        )
-        target_one_hot.scatter_(1, target.unsqueeze(1), 1)
+        Args:
+            input (torch.Tensor): Predictions (logits) of shape (N, C, H, W).
+            target (torch.Tensor): Ground truth labels of shape (N, H, W).
 
-        # 计算每个类别的 IoU
-        iou_losses = []
-        for class_index in range(self.num_classes):
-            iou_loss = self.iou_coefficient(
-                input_softmax[:, class_index],
-                target_one_hot[:, class_index],
-                self.epsilon,
-            )
-            iou_losses.append(iou_loss)
+        Returns:
+            torch.Tensor: Calculated IoU loss.
+        """
+        num_classes = input.shape[1]
+        # Convert logits to probabilities using softmax
+        input = F.softmax(input, dim=1)
 
-        # 将每个类别的损失合并为一个张量
-        iou_losses_tensor = torch.stack(iou_losses)
+        # Flatten the input and target tensors
+        input_flat = input.permute(0, 2, 3, 1).reshape(-1, num_classes)
+        target_flat = target.view(-1)
 
-        # 根据 reduction 参数计算最终的损失
-        if self.reduction == "none":
-            return 1 - iou_losses_tensor  # 返回每个样本的平均损失
-        elif self.reduction == "mean":
-            return 1 - iou_losses_tensor.mean()  # 返回所有样本的平均损失
+        # Create mask for ignoring index
+        if self.ignore_index is not None:
+            mask = target_flat != self.ignore_index
+            input_flat = input_flat[mask]
+            target_flat = target_flat[mask]
+
+        # Convert target to one-hot format
+        target_one_hot = F.one_hot(target_flat, num_classes=num_classes)
+
+        # Calculate intersection and union
+        intersection = (input_flat * target_one_hot).sum(dim=0)
+        union = (input_flat + target_one_hot - input_flat * target_one_hot).sum(dim=0)
+
+        # Compute IoU
+        iou = intersection / (union + 1e-6)
+
+        # Compute IoU loss
+        iou_loss = 1 - iou
+
+        # Apply reduction
+        if self.reduction == "mean":
+            return iou_loss.mean()
         elif self.reduction == "sum":
-            return 1 - iou_losses_tensor.sum()  # 返回所有样本的总和损失
-
-    def iou_coefficient(self, input, target, epsilon=1e-6):
-        """计算单个类别的 IoU 系数"""
-        smooth = epsilon
-        intersection = torch.sum(input * target)
-        union = torch.sum(input) + torch.sum(target) - intersection
-        return (intersection + smooth) / (union + smooth)
+            return iou_loss.sum()
+        else:
+            return iou_loss
 
 
 # 示例用法
@@ -63,8 +75,14 @@ if __name__ == "__main__":
     input = torch.randn(batch_size, n_classes, height, width)
     target = torch.randint(0, n_classes, (batch_size, height, width))
 
+    boundary_width = 1
+    target[:, :boundary_width, :] = 255  # Top boundary
+    target[:, -boundary_width:, :] = 255  # Bottom boundary
+    target[:, :, :boundary_width] = 255  # Left boundary
+    target[:, :, -boundary_width:] = 255  # Right boundary
+
     # 初始化损失函数
-    criterion = IoULoss(num_classes=n_classes, reduction="mean")
+    criterion = IoULoss(reduction="none", ignore_index=255)
 
     # 计算多分类 IoU Loss
     loss = criterion(input, target)
