@@ -290,6 +290,10 @@ def main(rank, world_size):
                         print(
                             f"Model saved at iteration {iter_count} with mean IoU: {best_mean_IoU:.4f}"
                         )
+                        with open(f"{save_dir}/best_model.txt", "w") as file:
+                            file.write(
+                                f"Best model at iteration {iter_count} with mean IoU: {best_mean_IoU:.4f}"
+                            )
 
                     # 重置混淆矩阵
                     confusion.fill(0)
