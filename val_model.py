@@ -1,8 +1,10 @@
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.colors import ListedColormap
 from torch.utils.data import DataLoader
 from torchvision.datasets import VOCSegmentation
+import torchvision.transforms.functional as F
 
 from model.base_model import SegModel
 from model.unet_rwkv import UNetRWKV, UNetDecoder
@@ -28,7 +30,23 @@ load_checkpoint(pretrained, model)
 
 model.eval()
 
-test_dataset = VOCSegmentation(root="data", image_set="val")
+
+def test_data_transform(image, mask):
+    target_size = (224, 224)
+
+    image = F.resize(image, target_size)
+    mask = F.resize(mask, target_size, interpolation=F.InterpolationMode.NEAREST)
+
+    # to tensor
+    image = F.to_tensor(image)
+    mask = torch.from_numpy(np.array(mask)).long()
+
+    return image, mask
+
+
+test_dataset = VOCSegmentation(
+    root="data/VOCSegmentation", image_set="val", transforms=test_data_transform
+)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True)
 
 voc_palette = [
@@ -65,10 +83,10 @@ for i, (img, mask) in enumerate(test_loader):
     _img = img.cuda()
     pred = model(_img)
     pred = torch.argmax(pred, dim=1)
-    pred = pred.cpu().numpy()
+    pred = pred.permute(1, 2, 0).cpu().numpy()
 
-    img = img.numpy().permute(1, 2, 0)
-    mask = mask.numpy()
+    img = img.squeeze().permute(1, 2, 0).numpy()
+    mask = mask.permute(1, 2, 0).numpy()
 
     mask[mask == 255] = 21
 
@@ -76,11 +94,11 @@ for i, (img, mask) in enumerate(test_loader):
     axs[0, i].set_title("Image")
     axs[0, i].axis("off")
 
-    axs[1, i].imshow(mask, cmap=cmap)
+    axs[1, i].imshow(mask, cmap=cmap, vmin=0, vmax=21, interpolation="nearest")
     axs[1, i].set_title("Ground Truth")
     axs[1, i].axis("off")
 
-    axs[2, i].imshow(pred, cmap=cmap)
+    axs[2, i].imshow(pred, cmap=cmap, vmin=0, vmax=21, interpolation="nearest")
     axs[2, i].set_title("Prediction")
     axs[2, i].axis("off")
 
