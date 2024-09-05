@@ -6,6 +6,7 @@ from torchvision.datasets import VOCSegmentation
 
 from model.base_model import SegModel
 from model.unet_rwkv import UNetRWKV, UNetDecoder
+from utils import load_checkpoint
 
 model = SegModel(
     backbone=UNetRWKV(
@@ -23,7 +24,7 @@ model = SegModel(
 
 pretrained = ""
 
-model.load_state_dict(torch.load(pretrained))
+load_checkpoint(pretrained, model)
 
 model.eval()
 
@@ -58,9 +59,7 @@ hex_palette = ["#{:02x}{:02x}{:02x}".format(r, g, b) for r, g, b in voc_palette]
 cmap = ListedColormap(hex_palette, N=22)
 
 num_samples_to_show = 10
-fig, axs = plt.subplots(
-   3, num_samples_to_show, figsize=(5 * num_samples_to_show, 15)
-)
+fig, axs = plt.subplots(3, num_samples_to_show, figsize=(5 * num_samples_to_show, 15))
 
 for i, (img, mask) in enumerate(test_loader):
     _img = img.cuda()
@@ -89,5 +88,3 @@ for i, (img, mask) in enumerate(test_loader):
         break
 
 plt.savefig("val_model.png")
-
-
