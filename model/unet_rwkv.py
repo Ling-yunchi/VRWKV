@@ -166,11 +166,7 @@ class UNetRWKV(nn.Module):
             x = rwkv(x)
             xs.append(x)
 
-        outputs = []  # 用于存储选定层的输出
-        for i, x in enumerate(xs):
-            if i in self.out_indices:
-                outputs.append(x)
-        return outputs
+        return [xs[i] for i in self.out_indices]
 
 
 class UNetDecoder(nn.Module):
