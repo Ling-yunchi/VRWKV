@@ -2,6 +2,7 @@ import torch
 
 # from model.adapter import VRWKV_Adapter
 from model.base_model import SegModel
+from model.cls_head import LinearClsHead
 from model.unet_rwkv import UNetRWKV, UNetDecoder
 from model.upernet import UPerNet, UPerNet_1
 from model.vrwkv import HWC_RWKV
@@ -49,10 +50,12 @@ model = SegModel(
         image_size=64,
         feature_channels=[64, 128, 256, 512],
     ),
+    # decode_head=LinearClsHead(num_classes=3,in_channels=[64, 128, 256, 512])
 ).cuda()
 
 x = torch.randn(1, 3, 64, 64).cuda()
 target = torch.randint(0, 3, (1, 64, 64)).cuda()
+# target = torch.randint(0,3,(1,)).cuda()
 
 criterion = torch.nn.CrossEntropyLoss()
 output = model(x)
