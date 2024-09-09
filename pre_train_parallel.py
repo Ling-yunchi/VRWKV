@@ -94,8 +94,6 @@ def main(rank, world_size):
     num_iters = 40000
     val_interval = 1000
 
-    global_step = 0
-
     if rank == 0:
         save_dir = "./checkpoints/pretrain_imagenet/unet_rwkv"
         save_dir = create_run_dir(save_dir)
@@ -123,8 +121,6 @@ def main(rank, world_size):
             # 反向传播和优化
             loss.backward()
             optimizer.step()
-
-            global_step += 1
 
             loss_sum = torch.zeros(1, dtype=torch.float32).cuda()
             dist.all_reduce(loss, op=dist.ReduceOp.SUM)
@@ -180,7 +176,9 @@ def main(rank, world_size):
                         if rank == 0:
                             val_process.update(1)
 
-                dist.all_reduce(confusion, op=dist.ReduceOp.SUM)
+                tensor_confusion = torch.from_numpy(confusion).cuda()
+                dist.all_reduce(tensor_confusion, op=dist.ReduceOp.SUM)
+                confusion = tensor_confusion.cpu().numpy()
 
                 if rank == 0:
                     # 计算 IoU 和像素准确率
@@ -194,14 +192,14 @@ def main(rank, world_size):
                     writer.add_scalar("Validation/Acc", accuracy, iter_count)
 
                     # draw confusion matrix
-                    CLASS_NAMES = [str(i) for i in range(1000)]
-                    fig = draw_confusion_matrix(confusion, CLASS_NAMES)
-                    writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
-
-                    fig = draw_normalized_confusion_matrix(confusion, CLASS_NAMES)
-                    writer.add_figure(
-                        "Validation/NormalizedConfusionMatrix", fig, iter_count
-                    )
+                    # CLASS_NAMES = [str(i) for i in range(1000)]
+                    # fig = draw_confusion_matrix(confusion, CLASS_NAMES)
+                    # writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
+                    #
+                    # fig = draw_normalized_confusion_matrix(confusion, CLASS_NAMES)
+                    # writer.add_figure(
+                    #     "Validation/NormalizedConfusionMatrix", fig, iter_count
+                    # )
 
                     save_checkpoint(
                         f"{save_dir}/model_{iter_count}.pth",
