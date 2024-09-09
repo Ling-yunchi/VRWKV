@@ -1,4 +1,5 @@
 import os
+import random
 
 import numpy as np
 import torch
@@ -21,6 +22,13 @@ from utils import (
     draw_confusion_matrix,
     draw_normalized_confusion_matrix,
 )
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def setup(rank, world_size):
@@ -86,6 +94,7 @@ def test_data_transform(image, mask):
 
 def main(rank, world_size):
     setup(rank, world_size)
+    # set_seed(114514)
 
     # 设置每个进程使用的GPU
     torch.cuda.set_device(rank)
@@ -98,13 +107,14 @@ def main(rank, world_size):
     )
     train_loader = DataLoader(train_dataset, batch_size=16, sampler=train_sampler)
 
-    test_dataset = HYPSO1_PNG_Dataset(
-        "data/HYPSO1Dataset", train=False, transforms=test_data_transform
-    )
-    test_sampler = torch.utils.data.distributed.DistributedSampler(
-        test_dataset, num_replicas=world_size, rank=rank
-    )
-    test_loader = DataLoader(test_dataset, batch_size=16, sampler=test_sampler)
+    if rank == 0:
+        test_dataset = HYPSO1_PNG_Dataset(
+            "data/HYPSO1Dataset", train=False, transforms=test_data_transform
+        )
+        # test_sampler = torch.utils.data.distributed.DistributedSampler(
+        #     test_dataset, num_replicas=world_size, rank=rank
+        # )
+        test_loader = DataLoader(test_dataset, batch_size=16)
 
     model_path = None
 
@@ -167,8 +177,6 @@ def main(rank, world_size):
             loss.backward()
             optimizer.step()
 
-            global_step += 1
-
             loss_sum = torch.zeros(1, dtype=torch.float32).cuda()
             dist.all_reduce(loss, op=dist.ReduceOp.SUM)
             loss_sum += loss.item()
@@ -185,6 +193,7 @@ def main(rank, world_size):
                     f"loss: {loss.item()}, accuracy: {accuracy*100:.4f}%"
                 )
                 process.update(1)
+
             iter_count += 1
 
             if iter_count % val_interval == 0:
