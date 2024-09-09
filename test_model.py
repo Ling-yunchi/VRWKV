@@ -48,15 +48,27 @@ model = SegModel(
         num_classes=21,
         image_size=64,
         feature_channels=[64, 128, 256, 512],
-    )
+    ),
 ).cuda()
+
 x = torch.randn(1, 3, 64, 64).cuda()
+target = torch.randint(0, 3, (1, 64, 64)).cuda()
+
 criterion = torch.nn.CrossEntropyLoss()
 output = model(x)
-loss = criterion(output, torch.randint(0, 3, (1, 64, 64)).cuda())
+
+loss = criterion(output, target)
 loss.backward()
+
 print(model)
 total_params = sum(p.numel() for p in model.parameters())
 print(total_params)
 print(output.shape)
 print(loss)
+
+unused_params = [
+    name
+    for name, param in model.named_parameters()
+    if param.grad is None or param.grad.abs().sum() == 0
+]
+print(unused_params)
