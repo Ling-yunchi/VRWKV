@@ -43,3 +43,15 @@ def load_checkpoint(checkpoint_path, model, optimizer=None):
         f"Loaded checkpoint from iteration {start_iter} with mean IoU: {last_mean_IoU:.4f}"
     )
     return start_iter, last_loss, last_mean_IoU
+
+
+def load_backbone(checkpoint_path, model):
+    checkpoint = torch.load(checkpoint_path)
+    model_state_dict = checkpoint["model_state_dict"]
+    backbone_state_dict = {
+        k: v for k, v in model_state_dict.items() if k.startswith("backbone")
+    }
+    model_params = model.state_dict()
+    model_params.update(backbone_state_dict)
+    model.load_state_dict(model_params)
+    print("Loaded backbone weights from checkpoint.")

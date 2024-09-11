@@ -6,6 +6,7 @@ from model.cls_head import LinearClsHead
 from model.unet_rwkv import UNetRWKV, UNetDecoder
 from model.upernet import UPerNet, UPerNet_1
 from model.vrwkv import HWC_RWKV
+from utils import load_backbone
 
 model = SegModel(
     # backbone=VRWKV_Adapter(
@@ -52,6 +53,11 @@ model = SegModel(
     ),
     # decode_head=LinearClsHead(num_classes=3,in_channels=[64, 128, 256, 512])
 ).cuda()
+
+# backbone_path = "checkpoints/model_40000.pth"
+#
+# if backbone_path:
+#     load_backbone(backbone_path, model)
 
 x = torch.randn(1, 3, 64, 64).cuda()
 target = torch.randint(0, 3, (1, 64, 64)).cuda()
