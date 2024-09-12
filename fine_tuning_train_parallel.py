@@ -268,7 +268,7 @@ def main(rank, world_size):
                 para_model.eval()
                 with torch.no_grad():
                     # 初始化混淆矩阵
-                    class_num = 1000
+                    class_num = 21
                     confusion = np.zeros((class_num, class_num))
                     if rank == 0:
                         val_process = tqdm(
@@ -333,6 +333,11 @@ def main(rank, world_size):
                     )
                     mean_IoU = np.mean(IoU)
                     print(f"Iteration {iter_count}, Mean IoU: {mean_IoU:.4f}")
+
+                    writer.add_scalar("Validation/MeanIoU", mean_IoU, iter_count)
+                    writer.add_scalar("Validation/PixelAccuracy", pixel_accuracy, iter_count)
+                    writer.add_scalars("Validation/IoU", class_iou, iter_count)
+                    writer.add_scalars("Validation/ClassAccuracy", class_accuracy, iter_count)
 
                     # draw confusion matrix
                     fig = draw_confusion_matrix(confusion, train_dataset.CLASS_NAMES)
