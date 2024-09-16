@@ -102,7 +102,7 @@ class ADE20KSegmentation(Dataset):
         img = Image.open(self.images[index]).convert("RGB")
         mask = Image.open(self.masks[index])
         if self.transforms is not None:
-            img = self.transforms(img, mask)
+            img, mask = self.transforms(img, mask)
         return img, mask
 
     def __len__(self):
