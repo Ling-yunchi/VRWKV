@@ -115,13 +115,13 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
-class BasicConv3d(nn.Module):
+class BasicConv2d(nn.Module):
     def __init__(
-        self, wn, in_channel, out_channel, kernel_size, stride, padding=(0, 0, 0)
+        self, wn, in_channel, out_channel, kernel_size, stride, padding=(0, 0)
     ):
-        super(BasicConv3d, self).__init__()
+        super(BasicConv2d, self).__init__()
         self.conv = wn(
-            nn.Conv3d(
+            nn.Conv2d(
                 in_channel,
                 out_channel,
                 kernel_size=kernel_size,
@@ -137,21 +137,36 @@ class BasicConv3d(nn.Module):
         return x
 
 
-class S3Dblock(nn.Module):
+class S2dBlock(nn.Module):
     def __init__(self, wn, n_feats):
-        super(S3Dblock, self).__init__()
+        super(S2dBlock, self).__init__()
 
         self.conv = nn.Sequential(
-            BasicConv3d(
-                wn, n_feats, n_feats, kernel_size=(1, 3, 3), stride=1, padding=(0, 1, 1)
+            BasicConv2d(
+                wn, n_feats, n_feats, kernel_size=(1, 3), stride=1, padding=(0, 1)
             ),
-            BasicConv3d(
-                wn, n_feats, n_feats, kernel_size=(3, 1, 1), stride=1, padding=(1, 0, 0)
+            BasicConv2d(
+                wn, n_feats, n_feats, kernel_size=(3, 1), stride=1, padding=(1, 0)
             ),
         )
 
     def forward(self, x):
         return self.conv(x)
+
+
+def _to_3d_tensor(x, depth_stride=None):
+    """Converts a 4d tensor to 3d by stackin
+    the batch and depth dimensions."""
+    x = x.transpose(0, 2)  # swap batch and depth dimensions: NxCxHxW => HxCxNxW
+    if depth_stride:
+        x = x[::depth_stride]  # downsample feature maps along depth dimension
+    depth = x.size()[0]
+    # x = rearrange(x,"h c n w -> n h c w")
+    x = x.permute(2, 0, 1, 3)  # HxCxNxW => NxHxCxW
+    x = torch.split(x, 1, dim=0)  # split along batch dimension: NxHxCxW => N*[1xHxCxW]
+    x = torch.cat(x, 1)  # concatenate along depth dimension: N*[1xHxCxW] => 1x(N*H)xCxW
+    x = x.squeeze(0)  # 1x(N*H)xCxW => (N*H)xCxW
+    return x, depth
 
 
 def _to_4d_tensor(x, depth_stride=None):
@@ -369,21 +384,21 @@ class Block(nn.Module):
 
         block1 = []
         for i in range(n_conv):
-            block1.append(S3Dblock(wn, n_feats))
+            block1.append(S2dBlock(wn, n_feats))
         self.block1 = nn.Sequential(*block1)
 
         block2 = []
         for i in range(n_conv):
-            block2.append(S3Dblock(wn, n_feats))
+            block2.append(S2dBlock(wn, n_feats))
         self.block2 = nn.Sequential(*block2)
 
         block3 = []
         for i in range(n_conv):
-            block3.append(S3Dblock(wn, n_feats))
+            block3.append(S2dBlock(wn, n_feats))
         self.block3 = nn.Sequential(*block3)
 
-        self.reduceF = BasicConv3d(wn, n_feats * 3, n_feats, kernel_size=1, stride=1)
-        self.conv = S3Dblock(wn, n_feats)
+        self.reduceF = BasicConv2d(wn, n_feats * 3, n_feats, kernel_size=1, stride=1)
+        self.conv = S2dBlock(wn, n_feats)
         self.gamma = nn.Parameter(torch.ones(3))
         self.conv1 = nn.Sequential(
             *[
@@ -412,18 +427,18 @@ class Block(nn.Module):
         x2 = self.block2(x1) + x1
         x3 = self.block3(x2) + x2
 
-        x1, depth = _to_4d_tensor(x1, depth_stride=1)
+        # x1, depth = _to_4d_tensor(x1, depth_stride=1)
         # print(res.shape, x1.shape)
         x1 = self.conv1(x1)
-        x1 = _to_5d_tensor(x1, depth)
+        # x1 = _to_5d_tensor(x1, depth)
 
-        x2, depth = _to_4d_tensor(x2, depth_stride=1)
+        # x2, depth = _to_4d_tensor(x2, depth_stride=1)
         x2 = self.conv2(x2)
-        x2 = _to_5d_tensor(x2, depth)
+        # x2 = _to_5d_tensor(x2, depth)
 
-        x3, depth = _to_4d_tensor(x3, depth_stride=1)
+        # x3, depth = _to_4d_tensor(x3, depth_stride=1)
         x3 = self.conv3(x3)
-        x3 = _to_5d_tensor(x3, depth)
+        # x3 = _to_5d_tensor(x3, depth)
 
         x = torch.cat([self.gamma[0] * x1, self.gamma[1] * x2, self.gamma[2] * x3], 1)
         x = self.reduceF(x)
@@ -435,20 +450,19 @@ class Block(nn.Module):
 
 
 class RWKVNet(nn.Module):
-    def __init__(self, upscale_factor=3, n_colors=31, n_feats=64, n_conv=1):
+    def __init__(self, in_channels=31, out_channels=31, n_feats=64, n_conv=1):
         super(RWKVNet, self).__init__()
 
-        scale = upscale_factor
+        kernel_size = 3
 
         # scale = 3
         # n_colors = 31
         # n_feats = 64
         # n_conv = 1
-        kernel_size = 3
         # fmt: off
-        band_mean = (0.0939, 0.0950, 0.0869, 0.0839, 0.0850, 0.0809, 0.0769, 0.0762, 0.0788, 0.0790, 0.0834,
-                     0.0894, 0.0944, 0.0956, 0.0939, 0.1187, 0.0903, 0.0928, 0.0985, 0.1046, 0.1121, 0.1194,
-                     0.1240, 0.1256, 0.1259, 0.1272, 0.1291, 0.1300, 0.1352, 0.1428, 0.1541)  # CAVE
+        # band_mean = (0.0939, 0.0950, 0.0869, 0.0839, 0.0850, 0.0809, 0.0769, 0.0762, 0.0788, 0.0790, 0.0834,
+        #              0.0894, 0.0944, 0.0956, 0.0939, 0.1187, 0.0903, 0.0928, 0.0985, 0.1046, 0.1121, 0.1194,
+        #              0.1240, 0.1256, 0.1259, 0.1272, 0.1291, 0.1300, 0.1352, 0.1428, 0.1541)  # CAVE
         # band_mean = (0.0100, 0.0137, 0.0219, 0.0285, 0.0376, 0.0424, 0.0512, 0.0651, 0.0694, 0.0723, 0.0816,
         #              0.0950, 0.1338, 0.1525, 0.1217, 0.1187, 0.1337, 0.1481, 0.1601, 0.1817, 0.1752, 0.1445,
         #              0.1450, 0.1378, 0.1343, 0.1328, 0.1303, 0.1299, 0.1456, 0.1433, 0.1303) #Hararvd
@@ -465,37 +479,46 @@ class RWKVNet(nn.Module):
         #             0.0650,	0.0671,	0.0687,	0.0693,	0.0687,	0.0688,	0.0677,	0.0689,	0.0736,	0.0735,	0.0728,	0.0713,	0.0734,
         #             0.0726,	0.0722,	0.074,	0.0742,	0.0794,	0.0892,	0.1005) #Foster2002
         # fmt: on
-        wn = lambda x: torch.nn.utils.weight_norm(x)
-        self.band_mean = torch.autograd.Variable(torch.FloatTensor(band_mean)).view(
-            [1, n_colors, 1, 1]
-        )
+        # self.band_mean = torch.autograd.Variable(torch.FloatTensor(band_mean)).view(
+        #     [1, n_colors, 1, 1]
+        # )
 
-        self.head = wn(nn.Conv3d(1, n_feats, kernel_size, padding=kernel_size // 2))
+        wn = lambda x: torch.nn.utils.parametrizations.weight_norm(x)
+
+        self.head = wn(
+            nn.Conv2d(in_channels, n_feats, kernel_size, padding=kernel_size // 2)
+        )
 
         self.SSRM1 = Block(wn, n_feats, n_conv)
         self.SSRM2 = Block(wn, n_feats, n_conv)
         self.SSRM3 = Block(wn, n_feats, n_conv)
         self.SSRM4 = Block(wn, n_feats, n_conv)
 
-        tail = []
-        tail.append(
-            wn(
-                nn.ConvTranspose3d(
-                    n_feats,
-                    n_feats,
-                    kernel_size=(3, 2 + scale, 2 + scale),
-                    stride=(1, scale, scale),
-                    padding=(1, 1, 1),
-                )
-            )
+        # tail = []
+        # tail.append(
+        #     wn(
+        #         nn.ConvTranspose2d(
+        #             n_feats,
+        #             n_feats,
+        #             kernel_size=(2 + scale, 2 + scale),
+        #             stride=(scale, scale),
+        #             padding=(1, 1),
+        #         )
+        #     )
+        # )
+        # tail.append(
+        #     wn(nn.Conv2d(n_feats, out_channels, kernel_size, padding=kernel_size // 2))
+        # )
+        # self.tail = nn.Sequential(*tail)
+        self.tail = wn(
+            nn.Conv2d(n_feats, out_channels, kernel_size, padding=kernel_size // 2)
         )
-        tail.append(wn(nn.Conv3d(n_feats, 1, kernel_size, padding=kernel_size // 2)))
-        self.tail = nn.Sequential(*tail)
 
     def forward(self, x):
-        self.band_mean = self.band_mean.to(x.device)
-        x = x - self.band_mean
-        x = x.unsqueeze(1)
+        # self.band_mean = self.band_mean.to(x.device)
+        # x = x - self.band_mean
+        # x = x.unsqueeze(1)
+
         T = self.head(x)
 
         x = self.SSRM1(T)
@@ -511,13 +534,14 @@ class RWKVNet(nn.Module):
         x = torch.add(x, T)
 
         x = self.tail(x)
-        x = x.squeeze(1)
-        x = x + self.band_mean
+
+        # x = x.squeeze(1)
+        # x = x + self.band_mean
         return x
 
 
 if __name__ == "__main__":
-    model = RWKVNet(3, 31, 64, 1).cuda()
+    model = RWKVNet(31, 3, 64, 1).cuda()
 
     x = torch.randn(2, 31, 16, 16).cuda()
     output = model(x)
