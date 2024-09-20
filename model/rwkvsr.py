@@ -132,7 +132,7 @@ class BasicConv2d(nn.Module):
                 padding=padding,
             )
         )
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
     def forward(self, x):
         x = self.conv(x)
@@ -383,7 +383,7 @@ class Block(nn.Module):
     def __init__(self, wn, n_feats, n_conv, num_blocks=[1, 2, 2, 4]):
         super(Block, self).__init__()
 
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=False)
 
         block1 = []
         for i in range(n_conv):
