@@ -41,15 +41,14 @@ class OmniShift(nn.Module):
         self.alpha = nn.Parameter(torch.randn(4), requires_grad=True)
 
         # Define the layers for testing
-        self.conv5x5_reparam = wn(
-            nn.Conv2d(
-                in_channels=dim,
-                out_channels=dim,
-                kernel_size=5,
-                padding=2,
-                groups=dim,
-                bias=False,
-            )
+        self.wn = wn
+        self.conv5x5_reparam = nn.Conv2d(
+            in_channels=dim,
+            out_channels=dim,
+            kernel_size=5,
+            padding=2,
+            groups=dim,
+            bias=False,
         )
         self.repram_flag = True
 
@@ -87,7 +86,8 @@ class OmniShift(nn.Module):
 
         combined_weight = combined_weight.to(device)
 
-        self.conv5x5_reparam.weight = nn.Parameter(combined_weight).cuda()
+        self.conv5x5_reparam.weight = nn.Parameter(combined_weight)
+        self.conv5x5_reparam = self.wn(self.conv5x5_reparam)
 
     def forward(self, x):
 
