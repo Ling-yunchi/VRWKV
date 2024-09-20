@@ -3,6 +3,9 @@ from einops import rearrange
 from torch import nn
 from torch.nn import functional as F
 
+from model.base_model import SegModel
+from model.upernet import UPerNet_1
+from model.vrwkv import PatchEmbed, resize_pos_embed
 from model.wkv import RUN_CUDA
 
 
@@ -450,99 +453,87 @@ class Block(nn.Module):
 
 
 class RWKVNet(nn.Module):
-    def __init__(self, in_channels=31, out_channels=31, n_feats=64, n_conv=1):
+    def __init__(
+        self,
+        img_size=256,
+        in_channels=31,
+        patch_size=4,
+        n_feats=[64, 128, 256, 512],
+        out_slices=[0, 1, 2, 3],
+        n_conv=1,
+    ):
         super(RWKVNet, self).__init__()
+        self.out_slices = out_slices
 
-        kernel_size = 3
+        self.patch_embed = PatchEmbed(
+            in_channels=in_channels,
+            input_size=img_size,
+            embed_dims=n_feats[0],
+            kernel_size=patch_size,
+            stride=patch_size,
+            bias=True,
+        )
 
-        # scale = 3
-        # n_colors = 31
-        # n_feats = 64
-        # n_conv = 1
-        # fmt: off
-        # band_mean = (0.0939, 0.0950, 0.0869, 0.0839, 0.0850, 0.0809, 0.0769, 0.0762, 0.0788, 0.0790, 0.0834,
-        #              0.0894, 0.0944, 0.0956, 0.0939, 0.1187, 0.0903, 0.0928, 0.0985, 0.1046, 0.1121, 0.1194,
-        #              0.1240, 0.1256, 0.1259, 0.1272, 0.1291, 0.1300, 0.1352, 0.1428, 0.1541)  # CAVE
-        # band_mean = (0.0100, 0.0137, 0.0219, 0.0285, 0.0376, 0.0424, 0.0512, 0.0651, 0.0694, 0.0723, 0.0816,
-        #              0.0950, 0.1338, 0.1525, 0.1217, 0.1187, 0.1337, 0.1481, 0.1601, 0.1817, 0.1752, 0.1445,
-        #              0.1450, 0.1378, 0.1343, 0.1328, 0.1303, 0.1299, 0.1456, 0.1433, 0.1303) #Hararvd
-        #
-        # band_mean = (0.0944, 0.1143, 0.1297, 0.1368, 0.1599, 0.1853, 0.2029, 0.2149, 0.2278, 0.2275, 0.2311,
-        #              0.2331, 0.2265, 0.2347, 0.2384, 0.1187, 0.2425, 0.2441, 0.2471, 0.2453, 0.2494, 0.2584,
-        #              0.2597, 0.2547, 0.2552, 0.2434, 0.2386, 0.2385, 0.2326, 0.2112, 0.2227) #ICVL
-        #
-        # band_mean = (0.0483, 0.0400, 0.0363, 0.0373, 0.0425, 0.0520, 0.0559, 0.0539, 0.0568, 0.0564, 0.0591,
-        #              0.0678, 0.0797, 0.0927, 0.0986, 0.1086, 0.1086, 0.1015, 0.0994, 0.0947, 0.0980, 0.0973,
-        #              0.0925, 0.0873, 0.0887, 0.0854, 0.0844, 0.0833, 0.0823, 0.0866, 0.1171, 0.1538, 0.1535) #Foster
-        #
-        # band_mean = (0.0595,	0.0600,	0.0651,	0.0639,	0.0641,	0.0637,	0.0646,	0.0618,	0.0679,	0.0641,	0.0677,
-        #             0.0650,	0.0671,	0.0687,	0.0693,	0.0687,	0.0688,	0.0677,	0.0689,	0.0736,	0.0735,	0.0728,	0.0713,	0.0734,
-        #             0.0726,	0.0722,	0.074,	0.0742,	0.0794,	0.0892,	0.1005) #Foster2002
-        # fmt: on
-        # self.band_mean = torch.autograd.Variable(torch.FloatTensor(band_mean)).view(
-        #     [1, n_colors, 1, 1]
-        # )
+        self.patch_resolution = self.patch_embed.init_out_size
+        num_patches = self.patch_resolution[0] * self.patch_resolution[1]
+
+        # Set position embedding
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, n_feats[0]))
 
         wn = lambda x: torch.nn.utils.parametrizations.weight_norm(x)
 
-        self.head = wn(
-            nn.Conv2d(in_channels, n_feats, kernel_size, padding=kernel_size // 2)
-        )
+        convs = []
+        for i in range(len(n_feats) - 1):
+            convs.append(nn.Conv2d(n_feats[i], n_feats[i + 1], kernel_size=1))
+        self.convs = nn.ModuleList(convs)
 
-        self.SSRM1 = Block(wn, n_feats, n_conv)
-        self.SSRM2 = Block(wn, n_feats, n_conv)
-        self.SSRM3 = Block(wn, n_feats, n_conv)
-        self.SSRM4 = Block(wn, n_feats, n_conv)
-
-        # tail = []
-        # tail.append(
-        #     wn(
-        #         nn.ConvTranspose2d(
-        #             n_feats,
-        #             n_feats,
-        #             kernel_size=(2 + scale, 2 + scale),
-        #             stride=(scale, scale),
-        #             padding=(1, 1),
-        #         )
-        #     )
-        # )
-        # tail.append(
-        #     wn(nn.Conv2d(n_feats, out_channels, kernel_size, padding=kernel_size // 2))
-        # )
-        # self.tail = nn.Sequential(*tail)
-        self.tail = wn(
-            nn.Conv2d(n_feats, out_channels, kernel_size, padding=kernel_size // 2)
-        )
+        ssrms = []
+        for feat in n_feats:
+            ssrms.append(Block(wn, feat, n_conv))
+        self.ssrms = nn.ModuleList(ssrms)
 
     def forward(self, x):
-        # self.band_mean = self.band_mean.to(x.device)
-        # x = x - self.band_mean
-        # x = x.unsqueeze(1)
+        x, patch_resolution = self.patch_embed(x)
+        h, w = patch_resolution
 
-        T = self.head(x)
+        # pos embedding
+        T = x + resize_pos_embed(
+            self.pos_embed,
+            self.patch_resolution,
+            patch_resolution,
+            mode="bilinear",
+            num_extra_tokens=0,
+        )
+        x = rearrange(T, "b (h w) c -> b c h w", h=h, w=w)
 
-        x = self.SSRM1(T)
-        x = torch.add(x, T)
+        res = []
+        for i, ssrm in enumerate(self.ssrms):
+            if i > 0:
+                x = self.convs[i - 1](x)
+            x = ssrm(x)
+            if i in self.out_slices:
+                res.append(x)
 
-        x = self.SSRM2(x)
-        x = torch.add(x, T)
-
-        x = self.SSRM3(x)
-        x = torch.add(x, T)
-
-        x = self.SSRM4(x)
-        x = torch.add(x, T)
-
-        x = self.tail(x)
-
-        # x = x.squeeze(1)
-        # x = x + self.band_mean
-        return x
+        return res
 
 
 if __name__ == "__main__":
-    model = RWKVNet(31, 3, 64, 1).cuda()
+    model = SegModel(
+        backbone=RWKVNet(
+            img_size=256,
+            in_channels=31,
+            n_feats=[64, 128, 256, 512],
+            out_slices=[0, 1, 2, 3],
+        ),
+        decode_head=UPerNet_1(
+            num_classes=21,
+            image_size=256,
+            fc_dim=512,
+            fpn_inplanes=[64, 128, 256, 512],
+            fpn_dim=256,
+        ),
+    ).cuda()
 
-    x = torch.randn(2, 31, 16, 16).cuda()
+    x = torch.randn(2, 31, 256, 256).cuda()
     output = model(x)
     print(output.shape)

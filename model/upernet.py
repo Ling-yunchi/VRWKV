@@ -105,6 +105,17 @@ class UPerNet_1(nn.Module):
         fpn_inplanes=(256, 512, 1024, 2048),
         fpn_dim=256,
     ):
+        """
+        UPerNet初始化函数。
+
+        :param num_classes: 输出类别的数量。
+        :param image_size: 输入图像的目标大小。
+        :param fc_dim: 全连接层的维度。
+        :param use_softmax: 是否使用softmax激活函数。
+        :param pool_scales: 金字塔池化模块(PPM)使用的不同尺度。
+        :param fpn_inplanes: 特征金字塔网络(FPN)每个输入层的通道数。
+        :param fpn_dim: FPN输出的通道数，决定了FPN模块内部处理的特征图的深度。
+        """
         super(UPerNet_1, self).__init__()
         self.image_size = to_2tuple(image_size)
         self.use_softmax = use_softmax
