@@ -42,6 +42,7 @@ class OmniShift(nn.Module):
 
         # Define the layers for testing
         self.wn = wn
+        self.dim = dim
         self.conv5x5_reparam = nn.Conv2d(
             in_channels=dim,
             out_channels=dim,
@@ -85,6 +86,15 @@ class OmniShift(nn.Module):
         device = self.conv5x5_reparam.weight.device
 
         combined_weight = combined_weight.to(device)
+
+        self.conv5x5_reparam = nn.Conv2d(
+            in_channels=self.dim,
+            out_channels=self.dim,
+            kernel_size=5,
+            padding=2,
+            groups=self.dim,
+            bias=False,
+        )
 
         self.conv5x5_reparam.weight = nn.Parameter(combined_weight)
         self.conv5x5_reparam = self.wn(self.conv5x5_reparam)
