@@ -45,6 +45,37 @@ def load_checkpoint(checkpoint_path, model, optimizer=None):
     return start_iter, last_loss, last_mean_IoU
 
 
+def load_checkpoint_lax(checkpoint_path, model):
+    checkpoint = torch.load(checkpoint_path)
+    model_state_dict = checkpoint["model_state_dict"]
+    model_state = model.state_dict()
+
+    # 过滤出预训练模型中可以匹配的权重
+    matched_weights = {
+        k: v
+        for k, v in model_state_dict.items()
+        if k in model_state and model_state[k].shape == v.shape
+    }
+
+    # 更新当前模型的状态字典
+    model_state.update(matched_weights)
+    model.load_state_dict(model_state)
+
+    # 检查并报告缺失或多余的权重
+    missing_keys = set(model_state.keys()) - set(matched_weights.keys())
+    unexpected_keys = set(model_state_dict.keys()) - set(matched_weights.keys())
+
+    if missing_keys:
+        print(f"Warning: Missing keys in the loaded weights:{', '.join(missing_keys)}")
+
+    if unexpected_keys:
+        print(
+            f"Warning: Unexpected keys found in the loaded weights:{', '.join(unexpected_keys)}"
+        )
+
+    return model
+
+
 def load_backbone(checkpoint_path, model):
     checkpoint = torch.load(checkpoint_path)
     model_state_dict = checkpoint["model_state_dict"]
