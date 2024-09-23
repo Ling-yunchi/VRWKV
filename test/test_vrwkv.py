@@ -4,6 +4,26 @@ from model.vrwkv import *
 
 
 class TestVrwkv(unittest.TestCase):
+    def test_VRWKV_Multi_HW_SpatialMix(self):
+        model = VRWKV_Multi_HW_SpatialMix(
+            n_embd=32, n_layer=1, layer_id=0, key_norm=True
+        ).cuda()
+
+        x = torch.randn(1, 64 * 64, 32).cuda()
+        out = model(x, (64, 64))
+
+        self.assertEqual(out.shape, (1, 64 * 64, 32))
+
+    def test_VRWKV_Multi_HWC_SpatialMix(self):
+        model = VRWKV_Multi_HWC_SpatialMix(
+            n_embd=32, n_layer=1, layer_id=0, key_norm=True
+        ).cuda()
+
+        x = torch.randn(1, 64 * 64, 32).cuda()
+        out = model(x, (64, 64))
+
+        self.assertEqual(out.shape, (1, 64 * 64, 32))
+
     def test_VRWKV_HWC_SpatialMix(self):
         model = VRWKV_HWC_SpatialMix(
             n_embd=32, n_layer=1, layer_id=0, recurrence=4, key_norm=False
