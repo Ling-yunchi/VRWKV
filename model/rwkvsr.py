@@ -43,13 +43,15 @@ class OmniShift(nn.Module):
         # Define the layers for testing
         self.wn = wn
         self.dim = dim
-        self.conv5x5_reparam = nn.Conv2d(
-            in_channels=dim,
-            out_channels=dim,
-            kernel_size=5,
-            padding=2,
-            groups=dim,
-            bias=False,
+        self.conv5x5_reparam = wn(
+            nn.Conv2d(
+                in_channels=dim,
+                out_channels=dim,
+                kernel_size=5,
+                padding=2,
+                groups=dim,
+                bias=False,
+            )
         )
         self.repram_flag = True
 
