@@ -569,8 +569,8 @@ class VRWKV_ChannelMix(nn.Module):
         self.n_layer = n_layer
         self.n_embd = n_embd
 
-        self.omni_shift = OmniShift(dim=n_embd)
-        # self.q_shift = QShift()
+        # self.omni_shift = OmniShift(dim=n_embd)
+        self.q_shift = QShift()
 
         self.hidden_sz = int(hidden_rate * n_embd)
 
@@ -591,11 +591,11 @@ class VRWKV_ChannelMix(nn.Module):
     def forward(self, x, resolution):
         # B, T, C = x.size()
 
-        h, w = resolution
-        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
-        x = self.omni_shift(x)
-        x = rearrange(x, "b c h w -> b (h w) c")
-        # x = self.q_shift(x, resolution)
+        # h, w = resolution
+        # x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        # x = self.omni_shift(x)
+        # x = rearrange(x, "b c h w -> b (h w) c")
+        x = self.q_shift(x, resolution)
 
         k = self.key(x)
         k = torch.square(torch.relu(k))
