@@ -19,6 +19,7 @@ from utils import (
     save_checkpoint,
     draw_confusion_matrix,
     draw_normalized_confusion_matrix,
+    save_script,
 )
 
 data_transforms = transforms.Compose(
@@ -66,6 +67,7 @@ val_interval = 1
 
 save_dir = "./checkpoints/vrwkv_upernet"
 save_dir = create_run_dir(save_dir)
+save_script(save_dir, __file__)
 writer = SummaryWriter(log_dir=save_dir)
 
 best_mean_IoU = 0.0

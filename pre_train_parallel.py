@@ -21,6 +21,7 @@ from utils import (
     save_checkpoint,
     draw_confusion_matrix,
     draw_normalized_confusion_matrix,
+    save_script,
 )
 
 
@@ -97,6 +98,7 @@ def main(rank, world_size):
     if rank == 0:
         save_dir = "./checkpoints/pretrain_imagenet/unet_rwkv"
         save_dir = create_run_dir(save_dir)
+        save_script(save_dir, __file__)
         writer = SummaryWriter(log_dir=save_dir)
 
         best_acc = 0.0

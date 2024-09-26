@@ -24,6 +24,7 @@ from utils import (
     load_backbone,
     xavier_init,
     set_seed,
+    save_script,
 )
 
 
@@ -220,6 +221,7 @@ def main(rank, world_size):
     if rank == 0:
         save_dir = "./checkpoints/voc_unet_rwkv"
         save_dir = create_run_dir(save_dir)
+        save_script(save_dir, __file__)
         writer = SummaryWriter(log_dir=save_dir)
 
         best_mean_IoU = 0.0
@@ -335,9 +337,13 @@ def main(rank, world_size):
                     print(f"Iteration {iter_count}, Mean IoU: {mean_IoU:.4f}")
 
                     writer.add_scalar("Validation/MeanIoU", mean_IoU, iter_count)
-                    writer.add_scalar("Validation/PixelAccuracy", pixel_accuracy, iter_count)
+                    writer.add_scalar(
+                        "Validation/PixelAccuracy", pixel_accuracy, iter_count
+                    )
                     writer.add_scalars("Validation/IoU", class_iou, iter_count)
-                    writer.add_scalars("Validation/ClassAccuracy", class_accuracy, iter_count)
+                    writer.add_scalars(
+                        "Validation/ClassAccuracy", class_accuracy, iter_count
+                    )
 
                     # draw confusion matrix
                     fig = draw_confusion_matrix(confusion, train_dataset.CLASS_NAMES)

@@ -2,7 +2,6 @@ import itertools
 
 import numpy as np
 from matplotlib import pyplot as plt
-from torch.utils.tensorboard import SummaryWriter
 
 
 def draw_confusion_matrix(confusion, class_names):

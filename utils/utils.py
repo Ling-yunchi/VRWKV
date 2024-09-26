@@ -1,4 +1,7 @@
 import os
+import shutil
+from datetime import datetime
+
 import torch
 
 
@@ -15,6 +18,13 @@ def create_run_dir(base_dir):
     run_dir = os.path.join(base_dir, f"run_{run_id}")
     os.makedirs(run_dir)
     return run_dir
+
+
+def save_script(run_dir, file_path):
+    # add time to end of the python script name yyyy_mm_dd_hh_mm_ss
+    now = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    file_name = os.path.basename(file_path).split(".")[0] + f"_{now}.py"
+    shutil.copy(file_path, os.path.join(run_dir, file_name))
 
 
 def save_checkpoint(checkpoint_path, model, optimizer, loss, mean_IoU, iter_count):
