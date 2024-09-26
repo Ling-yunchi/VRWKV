@@ -9,7 +9,7 @@ from torch import nn
 from torch.nn.init import normal_, trunc_normal_
 
 from model.ms_deform_attn.modules import MSDeformAttn
-from model.vrwkv import HWC_RWKV, resize_pos_embed
+from model.vrwkv import Vision_RWKV, resize_pos_embed
 
 
 def drop_path(
@@ -455,7 +455,7 @@ class SpatialPriorModule(nn.Module):
         return c1, c2, c3, c4
 
 
-class VRWKV_Adapter(HWC_RWKV):
+class VRWKV_Adapter(Vision_RWKV):
     def __init__(
         self,
         pretrain_size=224,

@@ -629,7 +629,7 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
-        self.att = VRWKV_HWC_SpatialMix(n_embd, n_layer, layer_id, key_norm=key_norm)
+        self.att = VRWKV_SpatialMix(n_embd, n_layer, layer_id, key_norm=key_norm)
 
         self.ffn = VRWKV_ChannelMix(
             n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
@@ -758,7 +758,7 @@ def resize_pos_embed(
     return torch.cat((extra_tokens, dst_weight), dim=1)
 
 
-class HWC_RWKV(nn.Module):
+class Vision_RWKV(nn.Module):
     def __init__(
         self,
         embed_dims=256,
@@ -786,7 +786,7 @@ class HWC_RWKV(nn.Module):
         Output:
             tuple: Tuple containing the output of the layers specified in out_indices
         """
-        super(HWC_RWKV, self).__init__()
+        super(Vision_RWKV, self).__init__()
         self.embed_dims = embed_dims
         self.num_extra_tokens = 0
         self.num_layers = depth

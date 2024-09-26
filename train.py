@@ -12,7 +12,7 @@ from tqdm import tqdm
 from dataset.HYPSO1 import HYPSO1_PNG_Dataset
 from model.base_model import SegModel
 from model.upernet import UPerNet
-from model.vrwkv import HWC_RWKV
+from model.vrwkv import Vision_RWKV
 from utils import (
     create_run_dir,
     load_checkpoint,
@@ -52,7 +52,7 @@ model_path = None
 
 # 初始化模型和损失函数
 model = SegModel(
-    backbone=HWC_RWKV(in_channels=3), decode_head=UPerNet(num_classes=3)
+    backbone=Vision_RWKV(in_channels=3), decode_head=UPerNet(num_classes=3)
 ).cuda()
 criterion = nn.CrossEntropyLoss()  # 适用于多分类问题，如图像分割
 

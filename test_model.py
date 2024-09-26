@@ -5,7 +5,7 @@ from model.base_model import SegModel
 from model.cls_head import LinearClsHead
 from model.unet_rwkv import UNetRWKV, UNetDecoder
 from model.upernet import UPerNet, UPerNet_1
-from model.vrwkv import HWC_RWKV
+from model.vrwkv import Vision_RWKV
 from utils import load_backbone
 
 model = SegModel(
@@ -28,7 +28,7 @@ model = SegModel(
     #     embed_dims=384,
     #     out_indices=[3, 7, 11, 15]
     # ),
-    # backbone=HWC_RWKV(
+    # backbone=Vision_RWKV(
     #     in_channels=3, depth=16, embed_dims=384, out_indices=[3, 7, 11, 15]
     # ),
     backbone=UNetRWKV(

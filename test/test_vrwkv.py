@@ -113,8 +113,8 @@ class TestVrwkv(unittest.TestCase):
         self.assertEqual(out.shape, (1, 32 * 32, 16))
         self.assertEqual(out_size, (32, 32))
 
-    def test_HWC_RWKV(self):
-        model = HWC_RWKV(
+    def test_Vision_RWKV(self):
+        model = Vision_RWKV(
             embed_dims=256,
             depth=12,
             drop_path_rate=0.0,
