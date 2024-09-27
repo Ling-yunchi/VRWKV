@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
 
+from model.layers import to_2tuple
 from model.token_shift import OmniShift, QShift
 from model.wkv import RUN_CUDA
 
@@ -656,12 +657,6 @@ class Block(nn.Module):
         x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
 
         return x
-
-
-def to_2tuple(x):
-    if isinstance(x, collections.abc.Iterable):
-        return x
-    return tuple([x, x])
 
 
 class PatchEmbed(nn.Module):
