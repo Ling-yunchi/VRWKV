@@ -84,6 +84,8 @@ def train_data_transform(image, mask):
     image = F.to_tensor(image)
     mask = torch.from_numpy(np.array(mask)).long()
 
+    image = F.normalize(image, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
     return image, mask
 
 
@@ -98,6 +100,12 @@ def test_data_transform(image, mask):
     mask = torch.from_numpy(np.array(mask)).long()
 
     return image, mask
+
+
+"""
+RUN NOTE:
+
+"""
 
 
 def main(rank, world_size):
