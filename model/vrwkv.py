@@ -34,13 +34,6 @@ class VRWKV_Multi_HW_SpatialMix(nn.Module):
         self.value = nn.Linear(n_embd, self.attn_sz, bias=False)
         self.receptance = nn.Linear(n_embd, self.attn_sz, bias=False)
 
-        self.forward_conv1d = nn.Conv1d(
-            in_channels=self.attn_sz, out_channels=self.attn_sz, kernel_size=1
-        )
-        self.backward_conv1d = nn.Conv1d(
-            in_channels=self.attn_sz, out_channels=self.attn_sz, kernel_size=1
-        )
-
         if key_norm:
             self.key_norm = nn.LayerNorm(self.attn_sz)
         else:
