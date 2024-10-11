@@ -712,6 +712,43 @@ class Block(nn.Module):
         return x
 
 
+class HWCBlock(nn.Module):
+    def __init__(self, n_embd, n_layer, layer_id, hidden_rate=1, key_norm=False):
+        super().__init__()
+        self.layer_id = layer_id
+
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
+
+        self.att = VRWKV_HWC_SpatialMix(n_embd, n_layer, layer_id, key_norm=key_norm)
+
+        self.ffn = VRWKV_ChannelMix(
+            n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
+        )
+        # self.ffn = FFN(n_embd=n_embd)
+
+        self.gamma1 = nn.Parameter(torch.ones(n_embd), requires_grad=True)
+        self.gamma2 = nn.Parameter(torch.ones(n_embd), requires_grad=True)
+
+    def forward(self, x):
+        _, _, h, w = x.shape
+
+        resolution = (h, w)
+
+        # x = self.dwconv1(x) + x
+        x = rearrange(x, "b c h w -> b (h w) c")
+        x = x + self.gamma1 * self.att(self.ln1(x), resolution)
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+
+        # x = self.dwconv2(x) + x
+        x = rearrange(x, "b c h w -> b (h w) c")
+        x = x + self.gamma2 * self.ffn(self.ln2(x), resolution)
+        # x = x + self.gamma2 * self.ffn(self.ln2(x))
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+
+        return x
+
+
 class PatchEmbed(nn.Module):
     def __init__(
         self,
@@ -804,6 +841,106 @@ def resize_pos_embed(
     dst_weight = torch.flatten(dst_weight, 2).transpose(1, 2)
 
     return torch.cat((extra_tokens, dst_weight), dim=1)
+
+
+class Vision_HWC_RWKV(nn.Module):
+    def __init__(
+        self,
+        embed_dims=256,
+        depth=12,
+        drop_path_rate=0.0,
+        in_channels=3,
+        img_size=224,
+        patch_size=16,
+        interpolation_mode="bicubic",
+        drop_after_pos_rate=0.0,
+        out_indices=[2, 5, 8, 11],
+        final_norm=True,
+    ):
+        """
+        Args:
+            embed_dims: Number of embedding dimensions
+            depth: Number of layers
+            drop_path_rate: Drop path rate
+            in_channels: Number of input channels
+            img_size: Size of the input image
+            patch_size: Size of the patch
+            drop_after_pos_rate: Dropout rate after positional encoding
+            out_indices: Indices of the output layers
+
+        Output:
+            tuple: Tuple containing the output of the layers specified in out_indices
+        """
+        super(Vision_HWC_RWKV, self).__init__()
+        self.embed_dims = embed_dims
+        self.num_extra_tokens = 0
+        self.num_layers = depth
+        self.drop_path_rate = drop_path_rate
+        self.interpolate_mode = interpolation_mode
+
+        self.patch_embed = PatchEmbed(
+            in_channels=in_channels,
+            input_size=img_size,
+            embed_dims=self.embed_dims,
+            kernel_size=patch_size,
+            stride=patch_size,
+            bias=True,
+        )
+
+        self.patch_resolution = self.patch_embed.init_out_size
+        num_patches = self.patch_resolution[0] * self.patch_resolution[1]
+
+        # Set position embedding
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, self.embed_dims))
+
+        self.drop_after_pos = nn.Dropout(p=drop_after_pos_rate)
+
+        self.out_indices = out_indices
+
+        self.layers = nn.ModuleList()
+        for i in range(self.num_layers):
+            self.layers.append(
+                HWCBlock(
+                    n_embd=embed_dims,
+                    n_layer=depth,
+                    layer_id=i,
+                    hidden_rate=1,
+                    key_norm=False,
+                )
+            )
+
+        self.ln_final = nn.LayerNorm(embed_dims) if final_norm else None
+
+    def forward(self, x):
+        # B = x.shape[0]
+        x, patch_resolution = self.patch_embed(x)
+        h, w = patch_resolution
+
+        x = x + resize_pos_embed(
+            self.pos_embed,
+            self.patch_resolution,
+            patch_resolution,
+            mode=self.interpolate_mode,
+            num_extra_tokens=0,
+        )
+
+        x = self.drop_after_pos(x)
+
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+
+        outs = []
+        for i, layer in enumerate(self.layers):
+            x = layer(x)
+
+            if i == len(self.layers) - 1 and self.ln_final is not None:
+                x = rearrange(x, "b c h w -> b (h w) c")
+                x = self.ln_final(x)
+                x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+
+            if i in self.out_indices:
+                outs.append(x)
+
+        return tuple(outs)
 
 
 class Vision_RWKV(nn.Module):
