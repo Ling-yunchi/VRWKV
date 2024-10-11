@@ -6,8 +6,79 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
 
+from model.layers import to_2tuple
 from model.token_shift import OmniShift, QShift
 from model.wkv import RUN_CUDA
+
+
+class VRWKV_Multi_SpatialMix(nn.Module):
+    """
+    Multi-Head SpetialMix
+    """
+
+    def __init__(self, n_embd, n_layer, layer_id, head_num, key_norm=False):
+        super().__init__()
+        self.layer_id = layer_id
+        self.n_layer = n_layer
+        self.n_embd = n_embd
+        self.device = None
+        self.attn_sz = n_embd
+        self.head_num = head_num
+
+        self.omni_shift = OmniShift(dim=n_embd)
+        # self.q_shift = QShift()
+
+        self.key = nn.Linear(n_embd, self.attn_sz * self.head_num, bias=False)
+        self.value = nn.Linear(n_embd, self.attn_sz * self.head_num, bias=False)
+        self.receptance = nn.Linear(n_embd, self.attn_sz * self.head_num, bias=False)
+
+        if key_norm:
+            self.key_norm = nn.LayerNorm(self.attn_sz * self.head_num)
+        else:
+            self.key_norm = None
+
+        self.output = nn.Linear(self.attn_sz * self.head_num, n_embd, bias=False)
+
+        with torch.no_grad():
+            self.spatial_decay = nn.Parameter(torch.randn(self.head_num * self.attn_sz))
+            self.spatial_first = nn.Parameter(torch.randn(self.head_num * self.attn_sz))
+
+    def jit_func(self, x, resolution):
+        h, w = resolution
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        x = self.omni_shift(x)
+        x = rearrange(x, "b c h w -> b (h w) c")
+        # x = self.q_shift(x, resolution)
+
+        k = self.key(x)
+        v = self.value(x)
+        r = self.receptance(x)
+        sr = torch.sigmoid(r)
+
+        return sr, k, v
+
+    def forward(self, x, resolution):
+        B, T, C = x.size()
+        self.device = x.device
+
+        h, w = resolution
+        sr, k, v = self.jit_func(x, resolution)
+
+        x = RUN_CUDA(
+            B,
+            T,
+            self.attn_sz * self.head_num,
+            self.spatial_decay / T,
+            self.spatial_first / T,
+            k,
+            v,
+        )
+        if self.key_norm is not None:
+            x = self.key_norm(x)
+        x = x * sr
+
+        x = self.output(x)
+        return x
 
 
 class VRWKV_Multi_HW_SpatialMix(nn.Module):
@@ -33,23 +104,16 @@ class VRWKV_Multi_HW_SpatialMix(nn.Module):
         self.value = nn.Linear(n_embd, self.attn_sz, bias=False)
         self.receptance = nn.Linear(n_embd, self.attn_sz, bias=False)
 
-        self.forward_conv1d = nn.Conv1d(
-            in_channels=self.attn_sz, out_channels=self.attn_sz, kernel_size=1
-        )
-        self.backward_conv1d = nn.Conv1d(
-            in_channels=self.attn_sz, out_channels=self.attn_sz, kernel_size=1
-        )
-
         if key_norm:
-            self.key_norm = nn.LayerNorm(self.attn_sz)
+            self.key_norm = nn.LayerNorm(self.attn_sz * 2)
         else:
             self.key_norm = None
 
         self.output = nn.Linear(self.attn_sz * 2, n_embd, bias=False)
 
         with torch.no_grad():
-            self.spatial_decay = nn.Parameter(torch.randn((2, self.attn_sz)))
-            self.spatial_first = nn.Parameter(torch.randn((2, self.attn_sz)))
+            self.spatial_decay = nn.Parameter(torch.randn(2 * self.attn_sz))
+            self.spatial_first = nn.Parameter(torch.randn(2 * self.attn_sz))
 
     def jit_func(self, x, resolution):
         h, w = resolution
@@ -65,21 +129,6 @@ class VRWKV_Multi_HW_SpatialMix(nn.Module):
 
         return sr, k, v
 
-    def _attention(self, sr, k, v, idx, B, T):
-        x = RUN_CUDA(
-            B,
-            T,
-            self.attn_sz,
-            self.spatial_decay[idx] / T,
-            self.spatial_first[idx] / T,
-            k,
-            v,
-        )
-        if self.key_norm is not None:
-            x = self.key_norm(x)
-        x = sr * x
-        return x
-
     def forward(self, x, resolution):
         B, T, C = x.size()
         self.device = x.device
@@ -90,13 +139,24 @@ class VRWKV_Multi_HW_SpatialMix(nn.Module):
         k1 = rearrange(k, "b (h w) c -> b (w h) c", h=h, w=w)
         v1 = rearrange(v, "b (h w) c -> b (w h) c", h=h, w=w)
 
-        xs = [
-            self._attention(sr, k, v, 0, B, T),
-            self._attention(sr, k1, v1, 1, B, T),
-        ]
+        ks = torch.cat([k, k1], dim=2)
+        vs = torch.cat([v, v1], dim=2)
+        srs = torch.cat([sr, sr], dim=2)
 
-        x = torch.cat(xs, dim=2)
-        x = self.output(x)
+        xs = RUN_CUDA(
+            B,
+            T,
+            self.attn_sz * 2,
+            self.spatial_decay / T,
+            self.spatial_first / T,
+            ks,
+            vs,
+        )
+        if self.key_norm is not None:
+            xs = self.key_norm(xs)
+        xs = xs * srs
+
+        x = self.output(xs)
         return x
 
 
@@ -131,15 +191,15 @@ class VRWKV_Multi_HWC_SpatialMix(nn.Module):
         )
 
         if key_norm:
-            self.key_norm = nn.LayerNorm(self.attn_sz)
+            self.key_norm = nn.LayerNorm(self.attn_sz * 4)
         else:
             self.key_norm = None
 
         self.output = nn.Linear(self.attn_sz * 4, n_embd, bias=False)
 
         with torch.no_grad():
-            self.spatial_decay = nn.Parameter(torch.randn((4, self.attn_sz)))
-            self.spatial_first = nn.Parameter(torch.randn((4, self.attn_sz)))
+            self.spatial_decay = nn.Parameter(torch.randn(4 * self.attn_sz))
+            self.spatial_first = nn.Parameter(torch.randn(4 * self.attn_sz))
 
     def jit_func(self, x, resolution):
         h, w = resolution
@@ -154,21 +214,6 @@ class VRWKV_Multi_HWC_SpatialMix(nn.Module):
         sr = torch.sigmoid(r)
 
         return sr, k, v
-
-    def _attention(self, sr, k, v, idx, B, T):
-        x = RUN_CUDA(
-            B,
-            T,
-            self.attn_sz,
-            self.spatial_decay[idx] / T,
-            self.spatial_first[idx] / T,
-            k,
-            v,
-        )
-        if self.key_norm is not None:
-            x = self.key_norm(x)
-        x = sr * x
-        return x
 
     def forward(self, x, resolution):
         B, T, C = x.size()
@@ -198,15 +243,24 @@ class VRWKV_Multi_HWC_SpatialMix(nn.Module):
         k4 = rearrange(k3, "b (h w) c -> b (w h) c", h=h, w=w)
         v4 = rearrange(v3, "b (h w) c -> b (w h) c", h=h, w=w)
 
-        xs = [
-            self._attention(sr, k1, v1, 0, B, T),
-            self._attention(sr, k2, v2, 1, B, T),
-            self._attention(sr, k3, v3, 2, B, T),
-            self._attention(sr, k4, v4, 3, B, T),
-        ]
+        ks = torch.cat([k1, k2, k3, k4], dim=2)
+        vs = torch.cat([v1, v2, v3, v4], dim=2)
+        srs = torch.cat([sr, sr, sr, sr], dim=2)
 
-        x = torch.cat(xs, dim=2)
-        x = self.output(x)
+        xs = RUN_CUDA(
+            B,
+            T,
+            self.attn_sz * 4,
+            self.spatial_decay / T,
+            self.spatial_first / T,
+            ks,
+            vs,
+        )
+        if self.key_norm is not None:
+            xs = self.key_norm(xs)
+        xs = xs * srs
+
+        x = self.output(xs)
         return x
 
 
@@ -656,12 +710,6 @@ class Block(nn.Module):
         x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
 
         return x
-
-
-def to_2tuple(x):
-    if isinstance(x, collections.abc.Iterable):
-        return x
-    return tuple([x, x])
 
 
 class PatchEmbed(nn.Module):

@@ -46,6 +46,11 @@ transform = transforms.Compose(
     ]
 )
 
+"""
+RUN NOTE:
+
+"""
+
 
 def main(rank, world_size):
     setup(rank, world_size)
