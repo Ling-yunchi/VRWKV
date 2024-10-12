@@ -612,6 +612,55 @@ class VRWKV_WKV_ChannelMix(nn.Module):
         return x
 
 
+class VRWKV_Q_ChannelMix(nn.Module):
+    """
+    Raw Channel Mix
+    """
+
+    def __init__(self, n_embd, n_layer, layer_id, hidden_rate=1, key_norm=False):
+        super().__init__()
+        self.layer_id = layer_id
+        self.n_layer = n_layer
+        self.n_embd = n_embd
+
+        self.omni_shift = OmniShift(dim=n_embd)
+        # self.q_shift = QShift()
+
+        self.hidden_sz = int(hidden_rate * n_embd)
+
+        self.key = nn.Linear(n_embd, self.hidden_sz, bias=False)
+
+        if key_norm:
+            self.key_norm = nn.LayerNorm(self.hidden_sz)
+        else:
+            self.key_norm = None
+
+        self.receptance = nn.Linear(n_embd, n_embd, bias=False)
+        self.value = nn.Linear(self.hidden_sz, n_embd, bias=False)
+
+        with torch.no_grad():
+            self.spatial_decay = nn.Parameter(torch.randn(self.n_embd))
+            self.spatial_first = nn.Parameter(torch.randn(self.n_embd))
+
+    def forward(self, x, resolution):
+        # B, T, C = x.size()
+
+        h, w = resolution
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w)
+        x = self.omni_shift(x)
+        x = rearrange(x, "b c h w -> b (h w) c")
+        # x = self.q_shift(x, resolution)
+
+        k = self.key(x)
+        k = torch.square(torch.relu(k))
+        if self.key_norm is not None:
+            k = self.key_norm(k)
+
+        kv = self.value(k)
+        x = torch.sigmoid(self.receptance(x)) * kv
+        return x
+
+
 class VRWKV_ChannelMix(nn.Module):
     """
     Raw Channel Mix
@@ -761,7 +810,7 @@ class MulHeadBlock(nn.Module):
             n_embd, n_layer, layer_id, key_norm=key_norm
         )
 
-        self.ffn = VRWKV_ChannelMix(
+        self.ffn = VRWKV_Q_ChannelMix(
             n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
         )
         # self.ffn = FFN(n_embd=n_embd)
