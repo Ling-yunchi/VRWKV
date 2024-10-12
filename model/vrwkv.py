@@ -612,7 +612,7 @@ class VRWKV_WKV_ChannelMix(nn.Module):
         return x
 
 
-class VRWKV_Q_ChannelMix(nn.Module):
+class VRWKV_O_ChannelMix(nn.Module):
     """
     Raw Channel Mix
     """
@@ -810,7 +810,7 @@ class MulHeadBlock(nn.Module):
             n_embd, n_layer, layer_id, key_norm=key_norm
         )
 
-        self.ffn = VRWKV_Q_ChannelMix(
+        self.ffn = VRWKV_O_ChannelMix(
             n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
         )
         # self.ffn = FFN(n_embd=n_embd)
