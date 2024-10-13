@@ -13,6 +13,7 @@ from torchvision.datasets import ImageNet, VOCSegmentation
 import torchvision.transforms.functional as F
 from torchvision.transforms import RandomRotation, ColorJitter, RandomCrop
 
+from dataset.ADE20KSegmentation import ADE20KSegmentation
 from model.base_model import SegModel
 from model.unet_rwkv import UNetRWKV, UNetDecoder
 from utils import (
@@ -114,42 +115,20 @@ def main(rank, world_size):
     # 设置每个进程使用的GPU
     torch.cuda.set_device(rank)
 
-    train_dataset = VOCSegmentation(
-        "data/VOCSegmentation",
-        image_set="train",
+    train_dataset = ADE20KSegmentation(
+        "data/ADEChallengeData2016",
+        mode="train",
         transforms=train_data_transform,
     )
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         train_dataset, num_replicas=world_size, rank=rank
     )
     train_loader = DataLoader(train_dataset, batch_size=32, sampler=train_sampler)
-    CLASS_NAMES = [
-        "background",
-        "aeroplane",
-        "bicycle",
-        "bird",
-        "boat",
-        "bottle",
-        "bus",
-        "car",
-        "cat",
-        "chair",
-        "cow",
-        "diningtable",
-        "dog",
-        "horse",
-        "motorbike",
-        "person",
-        "potted plant",
-        "sheep",
-        "sofa",
-        "train",
-        "tv/monitor",
-    ]
+    CLASS_NAMES = ["unknown"] + train_dataset.classes
 
-    test_dataset = VOCSegmentation(
-        "data/VOCSegmentation",
-        image_set="val",
+    test_dataset = ADE20KSegmentation(
+        "data/ADEChallengeData2016",
+        mode="val",
         transforms=test_data_transform,
     )
     test_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -174,13 +153,17 @@ def main(rank, world_size):
             out_indices=[0, 1, 2, 3],
         ),
         decode_head=UNetDecoder(
-            num_classes=21,
+            num_classes=151,
             image_size=224,
             feature_channels=[64, 128, 256, 512],
         ),
     ).cuda()
 
-    criterion = nn.CrossEntropyLoss()
+    class_radio = np.array(train_dataset.ratio)
+    weight = 1 / np.log(class_radio + 1)
+    weight.insert(0, 0)
+    weight = torch.tensor(weight).cuda()
+    criterion = nn.CrossEntropyLoss(weight, ignore_index=0)
 
     if backbone_path is not None:
         load_backbone(backbone_path, model)
@@ -204,7 +187,7 @@ def main(rank, world_size):
     val_interval = 1000
 
     if rank == 0:
-        save_dir = "./checkpoints/voc_unet_rwkv"
+        save_dir = "./checkpoints/ade_unet_rwkv"
         save_dir = create_run_dir(save_dir)
         save_script(save_dir, __file__)
         writer = SummaryWriter(log_dir=save_dir)
@@ -265,7 +248,7 @@ def main(rank, world_size):
                 para_model.eval()
                 with torch.no_grad():
                     # 初始化混淆矩阵
-                    class_num = 21
+                    class_num = 151
                     confusion = np.zeros((class_num, class_num))
                     if rank == 0:
                         val_process = tqdm(
@@ -338,14 +321,14 @@ def main(rank, world_size):
                         "Validation/ClassAccuracy", class_accuracy, iter_count
                     )
 
-                    # draw confusion matrix
-                    fig = draw_confusion_matrix(confusion, CLASS_NAMES)
-                    writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
-
-                    fig = draw_normalized_confusion_matrix(confusion, CLASS_NAMES)
-                    writer.add_figure(
-                        "Validation/NormalizedConfusionMatrix", fig, iter_count
-                    )
+                    # # draw confusion matrix
+                    # fig = draw_confusion_matrix(confusion, CLASS_NAMES)
+                    # writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
+                    #
+                    # fig = draw_normalized_confusion_matrix(confusion, CLASS_NAMES)
+                    # writer.add_figure(
+                    #     "Validation/NormalizedConfusionMatrix", fig, iter_count
+                    # )
                     if mean_IoU > best_mean_IoU:
                         best_mean_IoU = mean_IoU
                         save_checkpoint(

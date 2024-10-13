@@ -6,6 +6,8 @@ import numpy as np
 from PIL import Image
 from torch.utils.data import Dataset
 
+from model.wkv.wkv import file_path
+
 
 class ADE20KSegmentation(Dataset):
     """ADE20K Semantic Segmentation Dataset.
@@ -93,6 +95,7 @@ class ADE20KSegmentation(Dataset):
         self.transforms = transforms
 
         self.images, self.masks = _get_ade20k_pairs(root, mode)
+        self.ratio = _get_ade20k_ratio(root)
         assert len(self.images) > 0, f"Found 0 images in subfolders of: {root}"
         assert len(self.images) == len(
             self.masks
@@ -136,3 +139,18 @@ def _get_ade20k_pairs(folder, mode="train"):
                 print("cannot find the mask:", maskpath)
 
     return img_paths, mask_paths
+
+
+def _get_ade20k_ratio(root_path):
+    file_path = os.path.join(root_path, "objectInfo150.txt")
+    class_ratios = []
+    with open(file_path, "r") as file:
+        next(file)  # skip the header
+        for line in file:
+            parts = line.strip().split("\t")  # assuming tab-separated values
+            if len(parts) < 5:
+                continue
+            ratio = float(parts[1])
+            class_ratios.append(ratio)
+
+    return class_ratios
