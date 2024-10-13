@@ -148,6 +148,15 @@ def main(rank, world_size):
             iter_count += 1
 
             if iter_count % val_interval == 0:
+                if rank == 0:
+                    save_checkpoint(
+                        f"{save_dir}/model_{iter_count}.pth",
+                        model,
+                        optimizer,
+                        loss,
+                        accuracy,
+                        iter_count,
+                    )
                 # 验证阶段
                 para_model.eval()
                 with torch.no_grad():
@@ -169,7 +178,7 @@ def main(rank, world_size):
                         )
 
                         # 前向传播
-                        val_outputs = model(val_images)
+                        val_outputs = para_model(val_images)
 
                         # 计算混淆矩阵
                         predictions = (
@@ -208,15 +217,6 @@ def main(rank, world_size):
                     #     "Validation/NormalizedConfusionMatrix", fig, iter_count
                     # )
 
-                    save_checkpoint(
-                        f"{save_dir}/model_{iter_count}.pth",
-                        model,
-                        optimizer,
-                        loss,
-                        best_acc,
-                        iter_count,
-                    )
-
                     if accuracy > best_acc:
                         best_acc = accuracy
                         save_checkpoint(
@@ -239,7 +239,7 @@ def main(rank, world_size):
                 confusion.fill(0)
 
                 # 切换回训练模式
-                model.train()
+                para_model.train()
 
             dist.barrier()
 

@@ -123,7 +123,7 @@ def main(rank, world_size):
         train_dataset, num_replicas=world_size, rank=rank
     )
     train_loader = DataLoader(train_dataset, batch_size=32, sampler=train_sampler)
-    train_dataset.CLASS_NAMES = [
+    CLASS_NAMES = [
         "background",
         "aeroplane",
         "bicycle",
@@ -145,29 +145,6 @@ def main(rank, world_size):
         "sofa",
         "train",
         "tv/monitor",
-    ]
-    train_dataset.CLASSES = [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        14,
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
     ]
 
     test_dataset = VOCSegmentation(
@@ -274,6 +251,16 @@ def main(rank, world_size):
             iter_count += 1
 
             if iter_count % val_interval == 0:
+                if rank == 0:
+                    save_checkpoint(
+                        f"{save_dir}/model_{iter_count}.pth",
+                        model,
+                        optimizer,
+                        loss,
+                        accuracy,
+                        iter_count,
+                    )
+
                 # 验证阶段
                 para_model.eval()
                 with torch.no_grad():
@@ -295,7 +282,7 @@ def main(rank, world_size):
                         )
 
                         # 前向传播
-                        val_outputs = model(val_images)
+                        val_outputs = para_model(val_images)
 
                         # 计算混淆矩阵
                         predictions = (
@@ -325,11 +312,9 @@ def main(rank, world_size):
                     )
 
                     # 使用类名输出IoU和准确度
-                    class_iou = {
-                        train_dataset.CLASS_NAMES[i]: IoU[i] for i in range(len(IoU))
-                    }
+                    class_iou = {CLASS_NAMES[i]: IoU[i] for i in range(len(IoU))}
                     class_accuracy = {
-                        train_dataset.CLASS_NAMES[i]: (
+                        CLASS_NAMES[i]: (
                             (intersection[i] / ground_truth_set[i])
                             if ground_truth_set[i] > 0
                             else 0
@@ -354,25 +339,13 @@ def main(rank, world_size):
                     )
 
                     # draw confusion matrix
-                    fig = draw_confusion_matrix(confusion, train_dataset.CLASS_NAMES)
+                    fig = draw_confusion_matrix(confusion, CLASS_NAMES)
                     writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
 
-                    fig = draw_normalized_confusion_matrix(
-                        confusion, train_dataset.CLASS_NAMES
-                    )
+                    fig = draw_normalized_confusion_matrix(confusion, CLASS_NAMES)
                     writer.add_figure(
                         "Validation/NormalizedConfusionMatrix", fig, iter_count
                     )
-
-                    save_checkpoint(
-                        f"{save_dir}/model_{iter_count}.pth",
-                        model,
-                        optimizer,
-                        loss,
-                        mean_IoU,
-                        iter_count,
-                    )
-
                     if mean_IoU > best_mean_IoU:
                         best_mean_IoU = mean_IoU
                         save_checkpoint(
@@ -395,7 +368,7 @@ def main(rank, world_size):
                 confusion.fill(0)
 
                 # 切换回训练模式
-                model.train()
+                para_model.train()
 
             dist.barrier()
 
