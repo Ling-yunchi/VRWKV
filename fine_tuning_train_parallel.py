@@ -161,7 +161,7 @@ def main(rank, world_size):
 
     class_radio = np.array(train_dataset.ratio)
     weight = 1 / np.log(class_radio + 1)
-    np.insert(weight, 0, 0)
+    weight = np.insert(weight, 0, 0)
     weight = torch.tensor(weight).cuda()
     criterion = nn.CrossEntropyLoss(weight, ignore_index=0)
 
