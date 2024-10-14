@@ -124,7 +124,7 @@ def main(rank, world_size):
         train_dataset, num_replicas=world_size, rank=rank
     )
     train_loader = DataLoader(train_dataset, batch_size=32, sampler=train_sampler)
-    CLASS_NAMES = ["unknown"] + train_dataset.classes
+    class_names = ["unknown"] + list(train_dataset.classes)
 
     test_dataset = ADE20KSegmentation(
         "data/ADEChallengeData2016",
@@ -295,9 +295,9 @@ def main(rank, world_size):
                     )
 
                     # 使用类名输出IoU和准确度
-                    class_iou = {CLASS_NAMES[i]: IoU[i] for i in range(len(IoU))}
+                    class_iou = {class_names[i]: IoU[i] for i in range(len(IoU))}
                     class_accuracy = {
-                        CLASS_NAMES[i]: (
+                        class_names[i]: (
                             (intersection[i] / ground_truth_set[i])
                             if ground_truth_set[i] > 0
                             else 0
@@ -322,10 +322,10 @@ def main(rank, world_size):
                     )
 
                     # # draw confusion matrix
-                    # fig = draw_confusion_matrix(confusion, CLASS_NAMES)
+                    # fig = draw_confusion_matrix(confusion, class_names)
                     # writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
                     #
-                    # fig = draw_normalized_confusion_matrix(confusion, CLASS_NAMES)
+                    # fig = draw_normalized_confusion_matrix(confusion, class_names)
                     # writer.add_figure(
                     #     "Validation/NormalizedConfusionMatrix", fig, iter_count
                     # )
