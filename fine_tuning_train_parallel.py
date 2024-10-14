@@ -162,7 +162,7 @@ def main(rank, world_size):
     class_radio = np.array(train_dataset.ratio)
     weight = 1 / np.log(class_radio + 1)
     weight = np.insert(weight, 0, 0)
-    weight = torch.tensor(weight).cuda()
+    weight = torch.tensor(weight, dtype=torch.float32).cuda()
     criterion = nn.CrossEntropyLoss(weight, ignore_index=0)
 
     if backbone_path is not None:
