@@ -187,7 +187,7 @@ def main(rank, world_size):
     val_interval = 1000
 
     if rank == 0:
-        save_dir = "./checkpoints/ade_unet_rwkv"
+        save_dir = "./checkpoints/ade20k_unet_rwkv"
         save_dir = create_run_dir(save_dir)
         save_script(save_dir, __file__)
         writer = SummaryWriter(log_dir=save_dir)
