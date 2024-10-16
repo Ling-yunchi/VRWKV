@@ -8,19 +8,17 @@ import torch.optim as optim
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 from torchvision import transforms
 from torchvision.datasets import ImageNet
+from tqdm import tqdm
 
 from model.base_model import SegModel
 from model.cls_head import LinearClsHead
-from model.unet_rwkv import UNetRWKV, UNetDecoder
+from model.unet_rwkv import UNetRWKV
 from utils import (
     create_run_dir,
     load_checkpoint,
     save_checkpoint,
-    draw_confusion_matrix,
-    draw_normalized_confusion_matrix,
     save_script,
 )
 
@@ -206,16 +204,6 @@ def main(rank, world_size):
                     print(f"Iteration {iter_count}, Acc: {accuracy:.4f}")
 
                     writer.add_scalar("Validation/Acc", accuracy, iter_count)
-
-                    # draw confusion matrix
-                    # CLASS_NAMES = [str(i) for i in range(1000)]
-                    # fig = draw_confusion_matrix(confusion, CLASS_NAMES)
-                    # writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
-                    #
-                    # fig = draw_normalized_confusion_matrix(confusion, CLASS_NAMES)
-                    # writer.add_figure(
-                    #     "Validation/NormalizedConfusionMatrix", fig, iter_count
-                    # )
 
                     if accuracy > best_acc:
                         best_acc = accuracy

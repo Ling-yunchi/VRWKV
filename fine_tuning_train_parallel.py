@@ -5,13 +5,11 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
+import torchvision.transforms.functional as F
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from torchvision.datasets import ImageNet, VOCSegmentation
-import torchvision.transforms.functional as F
-from torchvision.transforms import RandomRotation, ColorJitter, RandomCrop
 
 from dataset.ADE20KSegmentation import ADE20KSegmentation
 from model.base_model import SegModel
@@ -20,13 +18,14 @@ from utils import (
     create_run_dir,
     load_checkpoint,
     save_checkpoint,
-    draw_confusion_matrix,
-    draw_normalized_confusion_matrix,
     load_backbone,
     xavier_init,
-    set_seed,
     save_script,
+    random_hflip,
+    set_seed,
+    resize,
 )
+from utils.transforms import random_resize, random_crop, normalize, color_jitter, pad
 
 
 def setup(rank, world_size):
@@ -53,48 +52,26 @@ def get_backbone_head_params(model):
 
 
 def train_data_transform(image, mask):
-    # 随机水平翻转
-    if torch.rand(1) < 0.5:
-        image, mask = F.hflip(image), F.hflip(mask)
+    image, mask = random_resize(image, mask, (2048, 512), (0.5, 2.0))
 
-    # 随机垂直翻转
-    if torch.rand(1) < 0.5:
-        image, mask = F.vflip(image), F.vflip(mask)
+    image, mask = random_crop(image, mask, (512, 512))
 
-    # 随机旋转
-    angle = RandomRotation.get_params(degrees=[-90, 90])
-    image, mask = F.rotate(image, angle), F.rotate(mask, angle, fill=255)
+    image, mask = random_hflip(image, mask, 0.5)
 
-    # 随机颜色抖动
-    color_jitter = ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
-    image = color_jitter(image)
+    image = color_jitter(image, brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)
 
-    target_size = (224, 224)
-    if torch.rand(1) < 0.1 and min(image.size) >= target_size[0]:
-        i, j, h, w = RandomCrop.get_params(image, output_size=target_size)
-        image, mask = F.crop(image, i, j, h, w), F.crop(mask, i, j, h, w)
-    else:
-        # 直接调整大小
-        image = F.resize(image, target_size)
-        mask = F.resize(mask, target_size, interpolation=F.InterpolationMode.NEAREST)
-
-    # image = F.resize(image, target_size)
-    # mask = F.resize(mask, target_size, interpolation=F.InterpolationMode.NEAREST)
-
-    # to tensor
     image = F.to_tensor(image)
     mask = torch.from_numpy(np.array(mask)).long()
 
-    image = F.normalize(image, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    image = normalize(image, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    image, mask = pad(image, mask, (512, 512), pad_val=0, seg_pad_val=0)
 
     return image, mask
 
 
 def test_data_transform(image, mask):
-    target_size = (224, 224)
-
-    image = F.resize(image, target_size)
-    mask = F.resize(mask, target_size, interpolation=F.InterpolationMode.NEAREST)
+    image, mask = resize(image, mask, (512, 512))
 
     # to tensor
     image = F.to_tensor(image)
@@ -321,14 +298,6 @@ def main(rank, world_size):
                         "Validation/ClassAccuracy", class_accuracy, iter_count
                     )
 
-                    # # draw confusion matrix
-                    # fig = draw_confusion_matrix(confusion, class_names)
-                    # writer.add_figure("Validation/ConfusionMatrix", fig, iter_count)
-                    #
-                    # fig = draw_normalized_confusion_matrix(confusion, class_names)
-                    # writer.add_figure(
-                    #     "Validation/NormalizedConfusionMatrix", fig, iter_count
-                    # )
                     if mean_IoU > best_mean_IoU:
                         best_mean_IoU = mean_IoU
                         save_checkpoint(

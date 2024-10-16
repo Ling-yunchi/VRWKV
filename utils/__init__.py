@@ -9,6 +9,17 @@ from .utils import (
     save_checkpoint,
     load_backbone,
 )
+from .transforms import (
+    color_jitter,
+    normalize,
+    pad,
+    resize,
+    random_resize,
+    random_crop,
+    random_hflip,
+    random_vflip,
+    random_rotate,
+)
 
 __all__ = [
     "create_run_dir",
@@ -21,4 +32,13 @@ __all__ = [
     "draw_normalized_confusion_matrix",
     "xavier_init",
     "set_seed",
+    "color_jitter",
+    "normalize",
+    "pad",
+    "resize",
+    "random_resize",
+    "random_crop",
+    "random_hflip",
+    "random_vflip",
+    "random_rotate",
 ]
