@@ -24,6 +24,7 @@ from utils import (
     random_hflip,
     set_seed,
     resize,
+    random_resized_crop,
 )
 from utils.transforms import random_resize, random_crop, normalize, color_jitter, pad
 
@@ -52,9 +53,7 @@ def get_backbone_head_params(model):
 
 
 def train_data_transform(image, mask):
-    image, mask = random_resize(image, mask, (2048, 512), (0.5, 2.0))
-
-    image, mask = random_crop(image, mask, (512, 512))
+    image, mask = random_resized_crop(image, mask, scale=(0.5, 2.0), ratio=(0.75, 1.33), crop_size=(512, 512))
 
     image, mask = random_hflip(image, mask, 0.5)
 

@@ -3,7 +3,12 @@ from typing import Tuple
 
 import torchvision.transforms.functional as F
 from torch import Tensor
-from torchvision.transforms import RandomCrop, RandomRotation, ColorJitter
+from torchvision.transforms import (
+    RandomCrop,
+    RandomRotation,
+    ColorJitter,
+    RandomResizedCrop,
+)
 
 
 def resize(img, mask, target: Tuple[int, int]):
@@ -17,6 +22,19 @@ def random_resize(img, mask, scale: Tuple[int, int], ratio_range: Tuple[float, f
     new_scale = [int(scale[0] * ratio), int(scale[1] * ratio)]
     img = F.resize(img, new_scale)
     mask = F.resize(mask, new_scale, interpolation=F.InterpolationMode.NEAREST)
+    return img, mask
+
+
+def random_resized_crop(
+    img,
+    mask,
+    scale: Tuple[float, float],
+    ratio: Tuple[float, float],
+    crop_size: Tuple[int, int],
+):
+    i, j, h, w = RandomResizedCrop.get_params(img, scale, ratio)
+    img = F.resized_crop(img, i, j, h, w, crop_size, F.InterpolationMode.BILINEAR)
+    mask = F.resized_crop(mask, i, j, h, w, crop_size, F.InterpolationMode.NEAREST)
     return img, mask
 
 
