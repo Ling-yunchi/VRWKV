@@ -64,8 +64,6 @@ def train_data_transform(image, mask):
 
     image = normalize(image, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    image, mask = pad(image, mask, (512, 512), pad_val=0, seg_pad_val=0)
-
     return image, mask
 
 
@@ -75,6 +73,8 @@ def test_data_transform(image, mask):
     # to tensor
     image = F.to_tensor(image)
     mask = torch.from_numpy(np.array(mask)).long()
+
+    image = normalize(image, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     return image, mask
 
