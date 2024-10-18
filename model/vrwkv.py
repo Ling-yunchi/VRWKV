@@ -264,7 +264,7 @@ class VRWKV_Multi_HWC_SpatialMix(nn.Module):
         return x
 
 
-class VRWKV_HWC_SpatialMix(nn.Module):
+class VRWKV_Rec_HWC_SpatialMix(nn.Module):
     """
     HWC-RWKV
     HWC-WKV: forward -> H-Scan -> Bi-WKV -> W-Scan -> Bi-WKV ->
@@ -383,7 +383,7 @@ class VRWKV_HWC_SpatialMix(nn.Module):
         return x
 
 
-class VRWKV_HW_SpatialMix(nn.Module):
+class VRWKV_Rec_HW_SpatialMix(nn.Module):
     """
     Restore-RWKV SpatialMix
     Re-WKV: H-Scan -> Bi-WKV -> W-Scan -> Bi-WKv -> ...
@@ -769,7 +769,7 @@ class HWCBlock(nn.Module):
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
-        self.att = VRWKV_HWC_SpatialMix(n_embd, n_layer, layer_id, key_norm=key_norm)
+        self.att = VRWKV_Rec_HWC_SpatialMix(n_embd, n_layer, layer_id, key_norm=key_norm)
 
         self.ffn = VRWKV_ChannelMix(
             n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
