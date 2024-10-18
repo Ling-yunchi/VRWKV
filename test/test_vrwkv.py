@@ -41,7 +41,7 @@ class TestVrwkv(unittest.TestCase):
         self.assertEqual(out.shape, (1, 64 * 64, 32))
 
     def test_VRWKV_HWC_SpatialMix(self):
-        model = VRWKV_HWC_SpatialMix(
+        model = VRWKV_Rec_HWC_SpatialMix(
             n_embd=32, n_layer=1, layer_id=0, recurrence=4, key_norm=False
         ).cuda()
 
@@ -51,7 +51,7 @@ class TestVrwkv(unittest.TestCase):
         self.assertEqual(out.shape, (1, 64 * 64, 32))
 
     def test_VRWKV_HW_SpatialMix(self):
-        model = VRWKV_HW_SpatialMix(
+        model = VRWKV_Rec_HW_SpatialMix(
             n_embd=32, n_layer=1, layer_id=0, recurrence=2, key_norm=False
         ).cuda()
 
