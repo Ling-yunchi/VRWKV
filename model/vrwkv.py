@@ -638,9 +638,9 @@ class VRWKV_O_ChannelMix(nn.Module):
         self.receptance = nn.Linear(n_embd, n_embd, bias=False)
         self.value = nn.Linear(self.hidden_sz, n_embd, bias=False)
 
-        with torch.no_grad():
-            self.spatial_decay = nn.Parameter(torch.randn(self.n_embd))
-            self.spatial_first = nn.Parameter(torch.randn(self.n_embd))
+        # with torch.no_grad():
+        #     self.spatial_decay = nn.Parameter(torch.randn(self.n_embd))
+        #     self.spatial_first = nn.Parameter(torch.randn(self.n_embd))
 
     def forward(self, x, resolution):
         # B, T, C = x.size()
@@ -687,9 +687,9 @@ class VRWKV_ChannelMix(nn.Module):
         self.receptance = nn.Linear(n_embd, n_embd, bias=False)
         self.value = nn.Linear(self.hidden_sz, n_embd, bias=False)
 
-        with torch.no_grad():
-            self.spatial_decay = nn.Parameter(torch.randn(self.n_embd))
-            self.spatial_first = nn.Parameter(torch.randn(self.n_embd))
+        # with torch.no_grad():
+        #     self.spatial_decay = nn.Parameter(torch.randn(self.n_embd))
+        #     self.spatial_first = nn.Parameter(torch.randn(self.n_embd))
 
     def forward(self, x, resolution):
         # B, T, C = x.size()
@@ -769,7 +769,9 @@ class HWCBlock(nn.Module):
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
-        self.att = VRWKV_Rec_HWC_SpatialMix(n_embd, n_layer, layer_id, key_norm=key_norm)
+        self.att = VRWKV_Rec_HWC_SpatialMix(
+            n_embd, n_layer, layer_id, key_norm=key_norm
+        )
 
         self.ffn = VRWKV_ChannelMix(
             n_embd, n_layer, layer_id, hidden_rate=hidden_rate, key_norm=key_norm
@@ -1140,6 +1142,7 @@ class Vision_RWKV(nn.Module):
         in_channels=3,
         img_size=224,
         patch_size=16,
+        hidden_rate=4,
         interpolation_mode="bicubic",
         drop_after_pos_rate=0.0,
         out_indices=[2, 5, 8, 11],
@@ -1192,7 +1195,7 @@ class Vision_RWKV(nn.Module):
                     n_embd=embed_dims,
                     n_layer=depth,
                     layer_id=i,
-                    hidden_rate=1,
+                    hidden_rate=hidden_rate,
                     key_norm=False,
                 )
             )

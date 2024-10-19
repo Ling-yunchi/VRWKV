@@ -283,7 +283,7 @@ def main(rank, world_size):
                         f"{save_dir}/model_{iter_count}.pth",
                         model,
                         optimizer,
-                        loss,
+                        loss.item(),
                         mean_IoU,
                         iter_count,
                     )
@@ -294,7 +294,7 @@ def main(rank, world_size):
                             f"{save_dir}/best_model.pth",
                             model,
                             optimizer,
-                            loss,
+                            loss.item(),
                             mean_IoU,
                             iter_count,
                         )

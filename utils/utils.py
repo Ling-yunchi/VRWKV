@@ -32,8 +32,10 @@ def save_checkpoint(checkpoint_path, model, optimizer, loss, mean_IoU, iter_coun
         {
             "iter": iter_count,
             "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "loss": loss.item(),
+            "optimizer_state_dict": (
+                optimizer.state_dict() if optimizer is not None else None
+            ),
+            "loss": loss,
             "mean_IoU": mean_IoU,
         },
         checkpoint_path,
