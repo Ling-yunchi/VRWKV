@@ -35,12 +35,24 @@ def cleanup():
     dist.destroy_process_group()
 
 
-transform = transforms.Compose(
+norm_cfg = dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375])
+
+train_transform = transforms.Compose(
     [
-        transforms.Resize(224),
+        transforms.RandomResizedCrop(224),
         transforms.RandomHorizontalFlip(),
+        transforms.RandAugment(num_ops=2, magnitude=9),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(**norm_cfg),
+    ]
+)
+
+test_transform = transforms.Compose(
+    [
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(**norm_cfg),
     ]
 )
 
@@ -56,13 +68,13 @@ def main(rank, world_size):
     # 设置每个进程使用的GPU
     torch.cuda.set_device(rank)
 
-    train_dataset = ImageNet("data/ImageNet", split="train", transform=transform)
+    train_dataset = ImageNet("data/ImageNet", split="train", transform=train_transform)
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         train_dataset, num_replicas=world_size, rank=rank
     )
     train_loader = DataLoader(train_dataset, batch_size=32, sampler=train_sampler)
 
-    test_dataset = ImageNet("data/ImageNet", split="val", transform=transform)
+    test_dataset = ImageNet("data/ImageNet", split="val", transform=test_transform)
     test_sampler = torch.utils.data.distributed.DistributedSampler(
         test_dataset, num_replicas=world_size, rank=rank
     )
