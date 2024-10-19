@@ -11,14 +11,13 @@ from model.cls_head import LinearClsHead
 from model.vrwkv import Vision_RWKV
 from utils import load_checkpoint
 
+norm_cfg = dict(mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375])
 transform = transforms.Compose(
     [
         transforms.Resize(256),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize(
-            mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375]
-        ),
+        transforms.Normalize(**norm_cfg),
     ]
 )
 
@@ -51,7 +50,6 @@ if model_path is not None:
 model.eval()
 total_samples = 0
 correct_predictions = 0
-top1_correct = 0
 val_process = tqdm(
     test_loader,
     desc="Validation",

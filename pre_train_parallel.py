@@ -110,6 +110,14 @@ def main(rank, world_size):
     num_iters = 40000
     val_interval = 1000
 
+    warm_up_iter = 5000
+    scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
+        optimizer, start_factor=0.01, total_iters=warm_up_iter
+    )
+    scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, num_iters - warm_up_iter
+    )
+
     if rank == 0:
         save_dir = "./checkpoints/pretrain_imagenet/unet_rwkv"
         save_dir = create_run_dir(save_dir)
@@ -139,20 +147,23 @@ def main(rank, world_size):
             loss.backward()
             optimizer.step()
 
-            loss_sum = torch.zeros(1, dtype=torch.float32).cuda()
+            if iter_count < warm_up_iter:
+                scheduler_warmup.step()
+            else:
+                scheduler_cosine.step()
+
             dist.all_reduce(loss, op=dist.ReduceOp.SUM)
-            loss_sum += loss.item()
-            avg_loss = loss_sum / world_size
+            avg_loss = loss.item() / world_size
 
             if rank == 0:
                 predictions = torch.argmax(outputs, dim=1)
                 accuracy = (predictions == labels).sum().item() / predictions.numel()
 
-                writer.add_scalar("Train/Loss", avg_loss.item(), iter_count)
+                writer.add_scalar("Train/Loss", avg_loss, iter_count)
                 writer.add_scalar("Train/Accuracy", accuracy, iter_count)
 
                 process.set_description(
-                    f"loss: {loss.item()}, accuracy: {accuracy*100:.4f}%"
+                    f"loss: {avg_loss}, acc: {accuracy*100:.4f}%, lr: {scheduler_warmup.get_lr() if iter_count < warm_up_iter else scheduler_cosine.get_lr()}"
                 )
                 process.update(1)
             iter_count += 1
@@ -163,10 +174,11 @@ def main(rank, world_size):
                         f"{save_dir}/model_{iter_count}.pth",
                         model,
                         optimizer,
-                        loss.item(),
+                        avg_loss,
                         accuracy,
                         iter_count,
                     )
+
                 # 验证阶段
                 para_model.eval()
                 with torch.no_grad():
