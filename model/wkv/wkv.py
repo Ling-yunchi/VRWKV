@@ -8,23 +8,47 @@ T_MAX = 8192  # increase this if your ctx_len is long [NOTE: TAKES LOTS OF VRAM!
 
 file_path = os.path.dirname(os.path.realpath(__file__))
 is_windows = os.name == "nt"
+build_dir = f"{file_path}/cuda/build"
+if not os.path.exists(build_dir):
+    os.makedirs(build_dir)
 
-# fmt: off
-wkv_cuda = load(
-    name="wkv",
-    sources=[f"{file_path}/cuda/wkv_op.cpp", f"{file_path}/cuda/wkv_cuda.cu"],
-    verbose=True,
-    build_directory=f"{file_path}/cuda/build",
-    extra_cuda_cflags=[
-        "-res-usage",
-        f"--maxrregcount{'=' if is_windows else ' '}60",
-        "--use_fast_math",
-        "-O3",
-        "-Xptxas", "-O3",
-        f"-DTmax={T_MAX}",
-    ],
-)
-# fmt: on
+
+def load_wkv_module():
+    # not working with dataloader workers
+    import torch.utils.data
+
+    if torch.utils.data.get_worker_info() is not None:
+        return None
+
+    # check if prebuilt lib exists
+    lib_path = f"{build_dir}/wkv.{'pyd' if is_windows else 'so'}"
+    if not os.path.exists(lib_path):
+        # fmt: off
+        return load(
+            name="wkv",
+            sources=[f"{file_path}/cuda/wkv_op.cpp", f"{file_path}/cuda/wkv_cuda.cu"],
+            verbose=True,
+            build_directory=build_dir,
+            extra_cuda_cflags=[
+                "-res-usage",
+                f"--maxrregcount{'=' if is_windows else ' '}60",
+                "--use_fast_math",
+                "-O3",
+                "-Xptxas", "-O3",
+                f"-DTmax={T_MAX}",
+            ],
+        )
+        # fmt: on
+    else:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("wkv", lib_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+
+wkv_cuda = load_wkv_module()
 
 
 class WKV(torch.autograd.Function):
