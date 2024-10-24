@@ -5,12 +5,8 @@ import torch
 from model.scan import (
     s_hw,
     sr_hw,
-    s_hw_r,
     s_wh,
-    s_wh_r,
-    sr_hw_r,
     sr_wh,
-    sr_wh_r,
     s_rhw,
     sr_rhw,
     s_hrw,
@@ -19,6 +15,10 @@ from model.scan import (
     sr_rwh,
     s_wrh,
     sr_wrh,
+    s_rhrw,
+    sr_rhrw,
+    s_rwrh,
+    sr_rwrh,
 )
 
 
@@ -38,16 +38,6 @@ class TestScan(unittest.TestCase):
         result = sr_hw(flat_tensor, self.h, self.w)
         self.assertTrue(torch.equal(result, self.tensor))
 
-    def test_s_hw_r(self):
-        expected = torch.tensor([[[9], [8], [7], [6], [5], [4], [3], [2], [1]]])
-        result = s_hw_r(self.tensor)
-        self.assertTrue(torch.equal(result, expected))
-
-    def test_sr_hw_r(self):
-        flat_tensor = s_hw_r(self.tensor)
-        result = sr_hw_r(flat_tensor, self.h, self.w)
-        self.assertTrue(torch.equal(result, self.tensor))
-
     def test_s_wh(self):
         expected = torch.tensor([[[1], [4], [7], [2], [5], [8], [3], [6], [9]]])
         result = s_wh(self.tensor)
@@ -56,16 +46,6 @@ class TestScan(unittest.TestCase):
     def test_sr_wh(self):
         flat_tensor = s_wh(self.tensor)
         result = sr_wh(flat_tensor, self.h, self.w)
-        self.assertTrue(torch.equal(result, self.tensor))
-
-    def test_s_wh_r(self):
-        expected = torch.tensor([[[9], [6], [3], [8], [5], [2], [7], [4], [1]]])
-        result = s_wh_r(self.tensor)
-        self.assertTrue(torch.equal(result, expected))
-
-    def test_sr_wh_r(self):
-        flat_tensor = s_wh_r(self.tensor)
-        result = sr_wh_r(flat_tensor, self.h, self.w)
         self.assertTrue(torch.equal(result, self.tensor))
 
     def test_s_rhw(self):
@@ -107,3 +87,27 @@ class TestScan(unittest.TestCase):
         flat_tensor = s_wrh(self.tensor)
         result = sr_wrh(flat_tensor, self.h, self.w)
         self.assertTrue(torch.equal(result, self.tensor))
+
+    def test_s_rhrw(self):
+        expected = torch.tensor([[[9], [8], [7], [6], [5], [4], [3], [2], [1]]])
+        result = s_rhrw(self.tensor)
+        self.assertTrue(torch.equal(result, expected))
+
+    def test_sr_rhrw(self):
+        flat_tensor = s_rhrw(self.tensor)
+        result = sr_rhrw(flat_tensor, self.h, self.w)
+        self.assertTrue(torch.equal(result, self.tensor))
+
+    def test_s_rwrh(self):
+        expected = torch.tensor([[[9], [6], [3], [8], [5], [2], [7], [4], [1]]])
+        result = s_rwrh(self.tensor)
+        self.assertTrue(torch.equal(result, expected))
+
+    def test_sr_rwrh(self):
+        flat_tensor = s_rwrh(self.tensor)
+        result = sr_rwrh(flat_tensor, self.h, self.w)
+        self.assertTrue(torch.equal(result, self.tensor))
+
+
+if __name__ == "__main__":
+    unittest.main()
