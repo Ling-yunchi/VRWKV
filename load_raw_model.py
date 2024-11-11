@@ -3,10 +3,11 @@ import torch
 from model.base_model import SegModel
 from model.cls_head import LinearClsHead
 from model.vrwkv import Vision_RWKV
+from model.vvrwkv import VVision_RWKV
 from utils import save_checkpoint
 
 model = SegModel(
-    backbone=Vision_RWKV(
+    backbone=VVision_RWKV(
         img_size=224,
         in_channels=3,
         patch_size=16,
@@ -31,7 +32,7 @@ model = SegModel(
 
 model_dict = model.state_dict()
 
-raw_model_dict = torch.load("checkpoints/vrwkv_t_in1k_224.pth", weights_only=True)[
+raw_model_dict = torch.load("checkpoints/vvrwkv_t_in1k_224.pth", weights_only=False)[
     "state_dict"
 ]
 
@@ -53,6 +54,9 @@ print(f"only_raw_model_key: {only_raw_model_key}")
 for key in same_key:
     model_dict[key] = raw_model_dict[key]
 
+for key in only_model_key:
+    torch.nn.init.normal_(model_dict[key])
+
 model.load_state_dict(model_dict)
 
-save_checkpoint("checkpoints/vrwkv_t_in1k_convert.pth", model, None, 0, 0, 0)
+save_checkpoint("checkpoints/vvrwkv_t_in1k_cls_convert.pth", model, None, 0, 0, 0)
